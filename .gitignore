@@ -1,11 +1,17 @@
+# Build artifacts
 /target
+/_*
+/models
+/lib
+
+# AI artifacts
 CLAUDE.local.md
 .claude/
+
+# Files
+.env
 *.pdf
 *.doc
 *.docx
 *.tmp
-/_*
-/models
-/lib
-.env
+*.log
