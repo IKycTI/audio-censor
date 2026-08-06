@@ -137,7 +137,7 @@
 
 
 #include "charts/0_intro.typ"
-#include "charts/0_1_lit_review.typ"
+// #include "charts/0_1_lit_review.typ"
 #include "charts/1_analyze.typ"
 #include "charts/2_math.typ"
 #include "charts/3_programm.typ"
