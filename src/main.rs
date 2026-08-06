@@ -1,16 +1,27 @@
+mod config;
 mod logging;
 
-use dotenvy::dotenv;
 use logging::init_logger;
-use tracing::info;
+use tracing::{error, info};
+
+use config::{BanSet, Settings};
+
+const CONFIG_PATH: &str = "config/default.toml";
 
 fn main() {
-    dotenv().ok();
+    let settings = Settings::new(CONFIG_PATH);
+    init_logger(settings.logging);
 
-    let log_file = std::env::var("LOG_FILE")
-        .ok()
-        .filter(|r| !r.trim().is_empty());
-    init_logger(log_file.as_deref());
+    let _word_dict = match BanSet::new(&settings.decision.words_dict_path) {
+        Ok(dict) => {
+            info!("Словарь загружен");
+            dict
+        }
+        Err(e) => {
+            error!("Ошибка при загрузке словаря: {}", e);
+            return;
+        }
+    };
 
     info!("Запуск censor_ai");
 }
