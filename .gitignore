@@ -1,0 +1,11 @@
+/target
+CLAUDE.local.md
+.claude/
+*.pdf
+*.doc
+*.docx
+*.tmp
+/_*
+/models
+/lib
+.env
