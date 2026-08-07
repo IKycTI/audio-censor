@@ -35,9 +35,9 @@ pub struct AudioSettings {
 
 #[derive(Deserialize)]
 pub struct BufferSettings {
-    pub input_ring_capacity_ms: usize,
-    pub output_ring_capacity_ms: usize,
-    pub delay_ms: usize,
+    pub input_ring_capacity_ms: u64,
+    pub output_ring_capacity_ms: u64,
+    pub delay_ms: u64,
     pub overflow_policy: OverflowPolicy,
 }
 
@@ -51,13 +51,13 @@ pub enum OverflowPolicy {
 #[derive(Deserialize)]
 pub struct DecisionSettings {
     pub words_dict_path: String,
-    pub max_distance: usize,
+    pub max_distance: u64,
 }
 
 #[derive(Deserialize)]
 pub struct FramingSettings {
-    pub chunk_size_ms: usize,
-    pub overlap_ms: usize,
+    pub chunk_size_ms: u64,
+    pub overlap_ms: u64,
 }
 
 #[derive(Deserialize)]
@@ -80,7 +80,7 @@ pub struct MaskingSettings {
     pub strategy: MaskingStrategy,
     pub beep_frequency_hz: u32,
     pub attenuation_db: f32,
-    pub padding_ms: usize,
+    pub padding_ms: u64,
 }
 
 #[derive(Deserialize)]
@@ -105,5 +105,5 @@ pub struct LoggingSettings {
 #[derive(Deserialize)]
 pub struct MetricsSettings {
     pub enabled: bool,
-    pub export_interval_ms: usize,
+    pub export_interval_ms: u64,
 }
