@@ -1,10 +1,7 @@
-mod config;
-mod logging;
-
-use logging::init_logger;
+use censor_ai::logging::init_logger;
 use tracing::{error, info};
 
-use config::{BanSet, Settings};
+use censor_ai::config::{BanSet, Settings};
 
 const CONFIG_PATH: &str = "config/default.toml";
 
