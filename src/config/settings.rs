@@ -29,14 +29,16 @@ pub struct AudioSettings {
     pub input_device: String,
     pub output_device: String,
     pub sample_rate: u32,
-    pub channels: u8,
-    pub sample_format: String,
+    pub channels: u16,
+    #[serde(with = "SampleFormatDef")]
+    pub sample_format: cpal::SampleFormat,
 }
 
 #[derive(Deserialize)]
 pub struct BufferSettings {
-    pub input_ring_capacity_ms: u64,
-    pub output_ring_capacity_ms: u64,
+    // pub input_ring_capacity_ms: u64,
+    // pub output_ring_capacity_ms: u64,
+    pub ring_capacity_ms: usize,
     pub delay_ms: u64,
     pub overflow_policy: OverflowPolicy,
 }
@@ -106,4 +108,24 @@ pub struct LoggingSettings {
 pub struct MetricsSettings {
     pub enabled: bool,
     pub export_interval_ms: u64,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(remote = "cpal::SampleFormat")]
+enum SampleFormatDef {
+    I8,
+    I16,
+    I24,
+    I32,
+    I64,
+    U8,
+    U16,
+    U24,
+    U32,
+    U64,
+    F32,
+    F64,
+    DsdU8,
+    DsdU16,
+    DsdU32,
 }
