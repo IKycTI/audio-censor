@@ -1,8 +1,8 @@
-use cpal::StreamConfig;
 use cpal::{
     traits::{DeviceTrait, HostTrait},
     Device,
 };
+use cpal::{StreamConfig, SupportedStreamConfig};
 
 use crate::config::AudioSettings;
 use tracing::{info, warn};
@@ -47,7 +47,12 @@ pub fn get_config(device: &Device, audio_config: &AudioSettings) -> Result<Strea
             && config.min_sample_rate() <= audio_config.sample_rate
             && config.max_sample_rate() >= audio_config.sample_rate
         {
-            selected_config = Some(config.with_max_sample_rate());
+            selected_config = Some(SupportedStreamConfig::new(
+                config.channels(),
+                audio_config.sample_rate,
+                *config.buffer_size(),
+                config.sample_format(),
+            ));
             break;
         }
     }
