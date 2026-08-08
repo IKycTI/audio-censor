@@ -9,6 +9,7 @@ CLAUDE.local.md
 .claude/
 
 # Files
+config/config.toml
 .env
 *.pdf
 *.doc

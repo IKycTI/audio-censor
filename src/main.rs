@@ -5,70 +5,43 @@ use audio_censor::logging::init_logger;
 use audio_censor::playback;
 
 use anyhow::Result;
-use clap::{Parser, Subcommand, ValueEnum};
+use clap::{Parser, ValueEnum};
 use cpal::traits::StreamTrait;
 use cpal::SizedSample;
-use ringbuf::HeapProd;
-use std::default;
-use std::fmt;
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 use tracing::{error, info};
 
-const CONFIG_PATH: &str = "config/default.toml";
-
 #[derive(Parser)]
 #[command(name = "audio-censor", version, about = "", propagate_version = true)]
 struct Cli {
-    /// Команда. Если ничего не передать, будет выполнен start.
-    #[command(subcommand)]
-    command: Option<Command>,
-}
+    /// Путь к файлу конфигурации
+    #[arg(short = 'c', long, value_name = "PATH")]
+    config_path: Option<PathBuf>,
 
-#[derive(Subcommand)]
-// Если нужен именно show_device, а не show-device:
-#[command(rename_all = "snake_case")]
-enum Command {
-    /// Запустить программу (действие по умолчанию)
-    Start,
-
-    /// Показать устройства: input, output или all
-    ShowDevice {
-        /// Какие устройства показывать
-        #[arg(value_enum, default_value = "all", value_name = "FILTER")]
-        filter: DeviceFilter,
-    },
+    /// Показать устройства вместо запуска start
+    #[arg(short, long, value_enum, value_name = "FILTER")]
+    show_device: Option<DeviceFilter>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum DeviceFilter {
-    /// Только входные устройства
     Input,
-
-    /// Только выходные устройства
     Output,
-
-    /// Все устройства
     All,
-}
-
-impl fmt::Display for DeviceFilter {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            DeviceFilter::Input => write!(f, "input"),
-            DeviceFilter::Output => write!(f, "output"),
-            DeviceFilter::All => write!(f, "all"),
-        }
-    }
 }
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
-    match cli.command {
+    match cli.show_device {
+        Some(filter) => Ok(show_device(filter)),
         // Если аргументы вообще не переданы — запускаем start
-        None | Some(Command::Start) => {
-            let settings = Settings::new(CONFIG_PATH);
+        None => {
+            // let settings = cli.config.map(|path| Settings::new(path.to_str())).unwrap();
+            let settings = Settings::new(cli.config_path);
+
             init_logger(&settings.logging);
             match settings.audio.sample_format {
                 cpal::SampleFormat::I8 => start::<i8>(settings),
@@ -84,8 +57,6 @@ fn main() -> Result<()> {
                 _ => Err(anyhow::anyhow!("Не поддерживаемы формат сэмпла.")),
             }
         }
-
-        Some(Command::ShowDevice { filter }) => Ok(show_device(filter)),
     }
 }
 
