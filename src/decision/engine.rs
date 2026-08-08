@@ -1,6 +1,5 @@
 use std::collections::HashSet;
 
-use crate::config::Settings;
 use crate::decision::Rules;
 use crate::recognition::TimedWord;
 
