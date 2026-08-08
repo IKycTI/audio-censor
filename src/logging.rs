@@ -3,7 +3,7 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::sync::Once;
 use tracing::info;
-use tracing_subscriber::{EnvFilter, fmt};
+use tracing_subscriber::{fmt, EnvFilter};
 
 static LOGGER_INIT: Once = Once::new();
 
@@ -15,9 +15,9 @@ static LOGGER_INIT: Once = Once::new();
 /// 3. stdout (если ни один не задан)
 ///
 /// Уровень логирования берётся из `LOG_LEVEL` (по умолчанию "info").
-pub fn init_logger(settings: LoggingSettings) {
+pub fn init_logger(settings: &LoggingSettings) {
     LOGGER_INIT.call_once(|| {
-        let env_filter = EnvFilter::try_new(settings.level).unwrap();
+        let env_filter = EnvFilter::try_new(settings.level.clone()).unwrap();
 
         if settings.file_path != "" {
             // Создаём директорию, если нужно
