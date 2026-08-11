@@ -1,5 +1,5 @@
-use censor_ai::decision::engine::{DecisionEngine, IntervalBanTime};
-use censor_ai::recognition::events::TimedWord;
+use audio_censor::decision::engine::{DecisionEngine, IntervalBanTime};
+use audio_censor::recognition::events::TimedWord;
 use std::collections::HashSet;
 
 fn make_engine(words: &[&'static str], max_distance: usize) -> DecisionEngine {
