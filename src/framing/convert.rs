@@ -1,4 +1,4 @@
-use cpal::{Sample, StreamConfig};
+use cpal::Sample;
 
 pub fn convert<T>(data: &[T], channels: usize) -> Vec<i16>
 where
