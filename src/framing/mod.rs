@@ -1,5 +1,5 @@
-// pub mod chunker;
+pub mod chunker;
 pub mod convert;
 
-// pub use chuncker::*;
+pub use chunker::*;
 pub use convert::*;

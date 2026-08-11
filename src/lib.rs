@@ -6,3 +6,5 @@ pub mod framing;
 pub mod logging;
 pub mod playback;
 pub mod recognition;
+
+pub const MS_PER_SEC: f64 = 1000.0;
