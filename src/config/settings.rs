@@ -19,12 +19,12 @@ const CONFIG_PATH: &str = "config/default.toml";
 impl Settings {
     pub fn new(config_path: Option<PathBuf>) -> Self {
         let path = config_path.unwrap_or_else(|| PathBuf::from(CONFIG_PATH));
-        let path_str = path
-            .to_str()
-            .expect("Не удалось получить строку пути");
+        let path_str = path.to_str().expect("Не удалось получить строку пути");
 
-        let content = std::fs::read_to_string(&path)
-            .expect(&format!("Файл конфигурации по пути {} не обнаружен", path_str));
+        let content = std::fs::read_to_string(&path).expect(&format!(
+            "Файл конфигурации по пути {} не обнаружен",
+            path_str
+        ));
         let params: Self = toml::from_str(&content).expect("Ошибка при разборе конфигурации");
         params
     }

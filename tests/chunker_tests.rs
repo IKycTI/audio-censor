@@ -33,9 +33,9 @@ fn assert_chunks_eq(a: &[Chunk], b: &[Chunk]) {
     }
 }
 
-fn expected_sizes(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u64) -> (usize, usize, usize) {
-    let chunk_size = ((chunk_size_ms * sample_rate) as f64 / 1000.0).round() as usize;
-    let overlap = ((overlap_ms * sample_rate) as f64 / 1000.0).round() as usize;
+fn expected_sizes(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> (usize, usize, usize) {
+    let chunk_size = ((chunk_size_ms * sample_rate as u64) as f64 / 1000.0).round() as usize;
+    let overlap = ((overlap_ms * sample_rate as u64) as f64 / 1000.0).round() as usize;
     let step = chunk_size - overlap;
     (chunk_size, overlap, step)
 }
@@ -45,7 +45,7 @@ fn chunking_is_independent_of_push_fragmentation() {
     const TOTAL: usize = 10_000;
     const CHUNK_MS: u64 = 100;
     const OVERLAP_MS: u64 = 20;
-    const SAMPLE_RATE: u64 = 1000;
+    const SAMPLE_RATE: u32 = 1000;
 
     let samples = synth_samples(TOTAL);
 
@@ -87,7 +87,7 @@ fn chunking_is_independent_of_push_fragmentation() {
 fn start_sample_grows_strictly_by_step() {
     const CHUNK_MS: u64 = 100;
     const OVERLAP_MS: u64 = 25;
-    const SAMPLE_RATE: u64 = 1000;
+    const SAMPLE_RATE: u32 = 1000;
     const TOTAL: usize = 5_000;
 
     let (_, _, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
@@ -114,7 +114,7 @@ fn start_sample_grows_strictly_by_step() {
 fn overlap_between_consecutive_chunks_matches_byte_for_byte() {
     const CHUNK_MS: u64 = 200;
     const OVERLAP_MS: u64 = 50;
-    const SAMPLE_RATE: u64 = 1000;
+    const SAMPLE_RATE: u32 = 1000;
     const TOTAL: usize = 8_000;
 
     let (chunk_size, overlap, _) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
@@ -143,7 +143,7 @@ fn overlap_between_consecutive_chunks_matches_byte_for_byte() {
 fn finish_pads_incomplete_tail_with_zeros() {
     const CHUNK_MS: u64 = 100;
     const OVERLAP_MS: u64 = 20;
-    const SAMPLE_RATE: u64 = 1000;
+    const SAMPLE_RATE: u32 = 1000;
 
     let (chunk_size, _, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
 
@@ -184,7 +184,7 @@ fn finish_pads_incomplete_tail_with_zeros() {
 fn finish_returns_none_when_buffer_is_empty() {
     const CHUNK_MS: u64 = 100;
     const OVERLAP_MS: u64 = 0;
-    const SAMPLE_RATE: u64 = 1000;
+    const SAMPLE_RATE: u32 = 1000;
 
     let (chunk_size, overlap, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
     assert_eq!(overlap, 0);

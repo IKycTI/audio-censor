@@ -13,9 +13,11 @@ pub struct Chunk {
 }
 
 impl Chunker {
-    pub fn new(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u64) -> Self {
-        let chunk_size_sample = ((chunk_size_ms * sample_rate) as f32 / MS_PER_SEC).round() as u64;
-        let overlap_size_samples = ((overlap_ms * sample_rate) as f32 / MS_PER_SEC).round() as u64;
+    pub fn new(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> Self {
+        let chunk_size_sample =
+            ((chunk_size_ms * sample_rate as u64) as f32 / MS_PER_SEC).round() as u64;
+        let overlap_size_samples =
+            ((overlap_ms * sample_rate as u64) as f32 / MS_PER_SEC).round() as u64;
 
         let step_samples = chunk_size_sample - overlap_size_samples;
 

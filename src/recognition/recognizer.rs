@@ -5,13 +5,13 @@ use crate::{framing::Chunk, recognition::TimedWord, MS_PER_SEC};
 
 pub struct SpeechRecognizer {
     recognizer: Option<Recognizer>,
-    _sample_rate: f32,
+    _sample_rate: u32,
     stream_offset_ms: u64,
 }
 
 impl SpeechRecognizer {
-    pub fn new(model: &Model, sample_rate: f32, stream_offset_ms: u64) -> Result<Self, String> {
-        if let Some(mut recognizer) = Recognizer::new(model, sample_rate) {
+    pub fn new(model: &Model, sample_rate: u32, stream_offset_ms: u64) -> Result<Self, String> {
+        if let Some(mut recognizer) = Recognizer::new(model, sample_rate as f32) {
             recognizer.set_words(true);
             Ok(SpeechRecognizer {
                 recognizer: Some(recognizer),
