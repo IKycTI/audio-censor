@@ -1,6 +1,8 @@
 use serde::Deserialize;
 use std::path::PathBuf;
 
+use crate::masking::MaskingStrategy;
+
 #[derive(Deserialize)]
 pub struct Settings {
     pub audio: AudioSettings,
@@ -89,13 +91,6 @@ pub struct MaskingSettings {
     pub beep_frequency_hz: u32,
     pub attenuation_db: f32,
     pub padding_ms: u64,
-}
-
-#[derive(Deserialize)]
-pub enum MaskingStrategy {
-    Beep,
-    Silence,
-    MuteAttenuate,
 }
 
 #[derive(Deserialize)]
