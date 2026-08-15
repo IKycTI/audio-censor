@@ -1,16 +1,15 @@
-use audio_censor::buffer;
-use audio_censor::capture;
-use audio_censor::config::{BanSet, Settings};
+use audio_censor::config::Settings;
 use audio_censor::logging::init_logger;
-use audio_censor::playback;
+use audio_censor::pipeline::{Orchestrator, OrchestratorError};
+use audio_censor::{capture, playback};
 
-use anyhow::Result;
 use clap::{Parser, ValueEnum};
-use cpal::traits::StreamTrait;
 use cpal::SizedSample;
+use dasp::{sample::Duplex, Sample};
 use std::path::PathBuf;
+use std::process::ExitCode;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::time::Duration;
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -32,17 +31,26 @@ enum DeviceFilter {
     All,
 }
 
-fn main() -> Result<()> {
+fn main() -> ExitCode {
     let cli = Cli::parse();
 
     match cli.show_device {
-        Some(filter) => Ok(show_device(filter)),
+        Some(filter) => {
+            show_device(filter);
+            ExitCode::SUCCESS
+        }
         // Если аргументы вообще не переданы — запускаем start
         None => {
-            // let settings = cli.config.map(|path| Settings::new(path.to_str())).unwrap();
-            let settings = Settings::new(cli.config_path);
+            let settings = match Settings::new(cli.config_path) {
+                Ok(s) => s,
+                Err(err) => {
+                    error!("Ошибка получения конфигурации: {}", err);
+                    return ExitCode::FAILURE;
+                }
+            };
 
             init_logger(&settings.logging);
+
             match settings.audio.sample_format {
                 cpal::SampleFormat::I8 => start::<i8>(settings),
                 cpal::SampleFormat::I16 => start::<i16>(settings),
@@ -54,105 +62,74 @@ fn main() -> Result<()> {
                 cpal::SampleFormat::U64 => start::<u64>(settings),
                 cpal::SampleFormat::F32 => start::<f32>(settings),
                 cpal::SampleFormat::F64 => start::<f64>(settings),
-                _ => Err(anyhow::anyhow!("Не поддерживаемы формат сэмпла.")),
+                other => {
+                    error!("Не поддерживаемый формат сэмпла: {other}.");
+                    ExitCode::FAILURE
+                }
             }
         }
     }
 }
 
-fn start<T: SizedSample + Default + Send + 'static>(settings: Settings) -> Result<()> {
-    let _word_dict = match BanSet::new(&settings.decision.words_dict_path) {
-        Ok(dict) => {
-            info!("Словарь загружен");
-            dict
-        }
-        Err(e) => {
-            error!("Ошибка при загрузке словаря: {}", e);
-            return Err(anyhow::anyhow!(e));
-        }
-    };
+fn start<T>(settings: Settings) -> ExitCode
+where
+    T: Default + Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
+{
+    info!("Запуск audio-censor");
 
-    // Временный кусок для теста уйдет в pipeline.rs
-    // ======================================================
-    let (prod, cons) = buffer::create_scsp::<T>(settings.buffer.ring_capacity_ms);
-
-    let input_device = match capture::get_device(&settings.audio.input_device) {
-        Ok(device) => device,
-        Err(e) => {
-            error!("Ошибка при получении устройства ввода: {}", e);
-            return Err(anyhow::anyhow!(e));
-        }
-    };
-
-    let input_config = match capture::get_config(&input_device, &settings.audio) {
-        Ok(config) => config,
-        Err(e) => {
-            error!("Ошибка при получении конфигурации устройства ввода: {}", e);
-            return Err(anyhow::anyhow!(e));
-        }
-    };
-
-    let input_stream = match capture::get_stream(input_device, input_config, prod) {
-        Ok(stream) => stream,
-        Err(e) => {
-            error!("Ошибка при получении потока устройства ввода: {}", e);
-            return Err(anyhow::anyhow!(e));
+    let mut orchestrator = match Orchestrator::<T>::new(settings) {
+        Ok(o) => o,
+        Err(err) => {
+            match err {
+                OrchestratorError::WordDictError(e) => error!("Ошибка при загрузке словаря: {}", e),
+                OrchestratorError::CaptureDeviceError(e) => {
+                    error!("Ошибка при получении устройства ввода: {}", e)
+                }
+                OrchestratorError::CaptureConfigError(e) => {
+                    error!("Ошибка при получении конфигурации устройства ввода: {}", e)
+                }
+                OrchestratorError::CaptureStreamError(e) => {
+                    error!("Ошибка при получении потока устройства ввода: {}", e)
+                }
+                OrchestratorError::PlaybackDeviceError(e) => {
+                    error!("Ошибка при получении устройства вывода: {}", e)
+                }
+                OrchestratorError::PlaybackConfigError(e) => {
+                    error!("Ошибка при получении конфигурации устройства вывода: {}", e)
+                }
+                OrchestratorError::PlaybackStreamError(e) => {
+                    error!("Ошибка при получении потока устройства ввода: {}", e)
+                }
+                OrchestratorError::ModelLoadError(e) => error!(e),
+                OrchestratorError::RecognizerError(e) => {
+                    error!("Ошибка при создании распознавателя: {}", e)
+                } // _ => error!("Неизвестная ошибка..."),
+            }
+            return ExitCode::FAILURE;
         }
     };
 
-    let output_device = match playback::get_device(&settings.audio.output_device) {
-        Ok(device) => device,
-        Err(e) => {
-            error!("Ошибка при получении устройства вывода: {}", e);
-            return Err(anyhow::anyhow!(e));
+    match orchestrator.start_streams() {
+        Ok(()) => (),
+        Err(err) => {
+            error!("Ошибка запуска потоков: {}", err.to_string());
+            return ExitCode::FAILURE;
         }
     };
 
-    let output_config = match playback::get_config(&output_device, &settings.audio) {
-        Ok(config) => config,
-        Err(e) => {
-            error!("Ошибка при получении конфигурации устройства ввода: {}", e);
-            return Err(anyhow::anyhow!(e));
-        }
-    };
+    let running = orchestrator.running_handle();
 
-    let output_stream = match playback::get_stream(output_device, output_config, cons) {
-        Ok(stream) => stream,
-        Err(e) => {
-            error!("Ошибка при получении потока устройства ввода: {}", e);
-            return Err(anyhow::anyhow!(e));
-        }
-    };
+    setup_shutdown_signal(running.clone());
 
-    input_stream.play()?;
-    output_stream.play()?;
+    info!("audio-censor успешно запущен, для остановки нажмите Ctrl+C");
+    orchestrator.run(); // блокирует текущий поток, пока running == true
 
-    info!("Запуск censor_ai");
-    println!("\n=== МОНИТОРИНГ МИКРОФОНА ===");
-    println!("Всё, что вы говорите, сразу воспроизводится в динамиках");
-    println!("Нажмите Ctrl+C для выхода\n");
-
-    // Бесконечный цикл с обработкой сигналов
-    let running = Arc::new(std::sync::atomic::AtomicBool::new(true));
-    let r = running.clone();
-    ctrlc::set_handler(move || {
-        eprintln!("\nОстанавливаем потоки...");
-        r.store(false, std::sync::atomic::Ordering::SeqCst);
-    })?;
-
-    while running.load(std::sync::atomic::Ordering::SeqCst) {
-        std::thread::sleep(Duration::from_millis(100));
-    }
-
-    // Останавливаем потоки
-    drop(input_stream);
-    drop(output_stream);
+    info!("Получен сигнал остановки, завершаю обработку хвостов...");
+    orchestrator.shutdown();
 
     info!("Завершено");
 
-    // ======================================================
-
-    Ok(())
+    ExitCode::SUCCESS
 }
 
 fn show_device(filter: DeviceFilter) {
@@ -165,4 +142,12 @@ fn show_device(filter: DeviceFilter) {
             playback::show_device();
         }
     }
+}
+
+fn setup_shutdown_signal(running: Arc<AtomicBool>) {
+    ctrlc::set_handler(move || {
+        info!("Получен сигнал завершения (Ctrl+C / SIGTERM)");
+        running.store(false, Ordering::Relaxed);
+    })
+    .expect("Не удалось установить обработчик сигнала завершения");
 }

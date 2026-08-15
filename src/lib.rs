@@ -5,6 +5,7 @@ pub mod decision;
 pub mod framing;
 pub mod logging;
 pub mod masking;
+pub mod pipeline;
 pub mod playback;
 pub mod recognition;
 
