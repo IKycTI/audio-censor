@@ -1,21 +1,33 @@
-use cpal::{BuildStreamError, Device, InputCallbackInfo, Stream, StreamConfig};
-use ringbuf::{HeapProd, traits::Producer};
+use cpal::{BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, StreamConfig};
+use ringbuf::{traits::Producer, HeapProd};
 use rodio::DeviceTrait;
-use tracing::error;
+use std::sync::{
+    atomic::{AtomicU64, Ordering},
+    Arc,
+};
+use tracing::{error, info};
 
-pub fn get_stream<T>(
+pub fn build_capture_stream<T>(
     device: Device,
     stream_config: StreamConfig,
     mut producer: HeapProd<T>,
+    dropped_samples: Arc<AtomicU64>,
 ) -> Result<Stream, BuildStreamError>
 where
-    T: cpal::SizedSample + Send + 'static,
+    T: SizedSample + Send + 'static,
 {
     device.build_input_stream(
         &stream_config,
         move |data: &[T], _: &InputCallbackInfo| {
-            for d in data.iter() {
-                producer.try_push(*d).ok();
+            let pushed = producer.push_slice(data);
+
+            info!(
+                "callback: получено {} сэмплов, записано {}",
+                data.len(),
+                pushed
+            );
+            if pushed < data.len() {
+                dropped_samples.fetch_add((data.len() - pushed) as u64, Ordering::Relaxed);
             }
         },
         move |e| error!("Ошибка входного потока: {}", e),
