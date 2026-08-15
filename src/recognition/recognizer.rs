@@ -4,7 +4,7 @@ use vosk::{DecodingState, Model, Recognizer, Word};
 use crate::{framing::Chunk, recognition::TimedWord, MS_PER_SEC};
 
 pub struct SpeechRecognizer {
-    recognizer: Option<Recognizer>,
+    recognizer: Recognizer,
     _sample_rate: u32,
     stream_offset_ms: u64,
 }
@@ -14,7 +14,7 @@ impl SpeechRecognizer {
         if let Some(mut recognizer) = Recognizer::new(model, sample_rate as f32) {
             recognizer.set_words(true);
             Ok(SpeechRecognizer {
-                recognizer: Some(recognizer),
+                recognizer: recognizer,
                 _sample_rate: sample_rate,
                 stream_offset_ms,
             })
@@ -24,17 +24,20 @@ impl SpeechRecognizer {
     }
 
     pub fn push_chunk(&mut self, chunk: &Chunk) -> Vec<TimedWord> {
-        let mut recognizer = self.recognizer.take().expect("Recognizer уже был завершён");
-
-        let accept_res = recognizer.accept_waveform(&chunk.data);
+        let accept_res = self.recognizer.accept_waveform(&chunk.data);
 
         match accept_res {
             Ok(res) => match res {
                 DecodingState::Finalized => {
                     info!("Чанк добален, слова были распознаны");
 
-                    let words = get_words(&mut recognizer);
-                    self.convert_word_to_timed_word(words)
+                    let words = self
+                        .recognizer
+                        .result()
+                        .single()
+                        .expect("При получении результатов Vosk произошла ошибка");
+
+                    convert_word_to_timed_word(self.stream_offset_ms, words.result)
                 }
                 DecodingState::Running => {
                     info!("Чанк добавлен, слова не распознаны");
@@ -52,30 +55,24 @@ impl SpeechRecognizer {
         }
     }
 
-    pub fn finish(mut self) -> Vec<TimedWord> {
-        let mut recognizer = self.recognizer.take().expect("Recognizer уже был завершён");
-        let words = get_words(&mut recognizer);
+    pub fn finish(&mut self) -> Vec<TimedWord> {
+        let words = self
+            .recognizer
+            .final_result()
+            .single()
+            .expect("При получении результатов Vosk произошла ошибка");
 
-        self.convert_word_to_timed_word(words)
-    }
-
-    fn convert_word_to_timed_word(&self, words: Vec<Word<'_>>) -> Vec<TimedWord> {
-        words
-            .iter()
-            .map(|w| {
-                let start = self.stream_offset_ms + (w.start * MS_PER_SEC).round() as u64;
-                let end = self.stream_offset_ms + (w.end * MS_PER_SEC).round() as u64;
-                TimedWord::new(w.word, start, end)
-            })
-            .collect()
+        convert_word_to_timed_word(self.stream_offset_ms, words.result)
     }
 }
 
-fn get_words(recognizer: &mut Recognizer) -> Vec<Word<'_>> {
-    let result = recognizer
-        .final_result()
-        .single()
-        .expect("При получении результатов Vosk произошла ошибка");
-    let words = result.result;
+fn convert_word_to_timed_word(stream_offset_ms: u64, words: Vec<Word<'_>>) -> Vec<TimedWord> {
     words
+        .iter()
+        .map(|w| {
+            let start = stream_offset_ms + (w.start * MS_PER_SEC).round() as u64;
+            let end = stream_offset_ms + (w.end * MS_PER_SEC).round() as u64;
+            TimedWord::new(w.word, start, end)
+        })
+        .collect()
 }
