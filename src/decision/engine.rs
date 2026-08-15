@@ -8,7 +8,7 @@ pub struct DecisionEngine {
 }
 
 impl DecisionEngine {
-    pub fn new(bad_words: HashSet<&'static str>, max_distance: usize) -> Self {
+    pub fn new(bad_words: HashSet<String>, max_distance: u64) -> Self {
         Self {
             rules: Rules::new(bad_words, max_distance),
         }

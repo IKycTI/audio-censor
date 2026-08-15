@@ -5,15 +5,15 @@ use std::collections::HashSet;
 const SHORTEST_WORD_LENGTH: usize = 3;
 
 pub struct Rules {
-    pub bad_words: HashSet<&'static str>,
+    pub bad_words: HashSet<String>,
     pub max_distance: usize,
 }
 
 impl Rules {
-    pub fn new(bad_words: HashSet<&'static str>, max_distance: usize) -> Self {
+    pub fn new(bad_words: HashSet<String>, max_distance: u64) -> Self {
         Self {
             bad_words,
-            max_distance,
+            max_distance: max_distance as usize,
         }
     }
 
