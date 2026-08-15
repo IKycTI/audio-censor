@@ -19,16 +19,15 @@ pub struct Settings {
 const CONFIG_PATH: &str = "config/default.toml";
 
 impl Settings {
-    pub fn new(config_path: Option<PathBuf>) -> Self {
+    pub fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
         let path = config_path.unwrap_or_else(|| PathBuf::from(CONFIG_PATH));
-        let path_str = path.to_str().expect("Не удалось получить строку пути");
 
-        let content = std::fs::read_to_string(&path).expect(&format!(
-            "Файл конфигурации по пути {} не обнаружен",
-            path_str
-        ));
+        let content = match std::fs::read_to_string(&path) {
+            Ok(c) => c,
+            Err(err) => return Err(err.to_string()),
+        };
         let params: Self = toml::from_str(&content).expect("Ошибка при разборе конфигурации");
-        params
+        Ok(params)
     }
 }
 
@@ -44,18 +43,8 @@ pub struct AudioSettings {
 
 #[derive(Deserialize)]
 pub struct BufferSettings {
-    // pub input_ring_capacity_ms: u64,
-    // pub output_ring_capacity_ms: u64,
     pub ring_capacity_ms: usize,
     pub delay_ms: u64,
-    pub overflow_policy: OverflowPolicy,
-}
-
-#[derive(Deserialize)]
-pub enum OverflowPolicy {
-    DropOldest,
-    DropNewest,
-    Block,
 }
 
 #[derive(Deserialize)]
@@ -88,7 +77,8 @@ pub enum Language {
 #[derive(Deserialize)]
 pub struct MaskingSettings {
     pub strategy: MaskingStrategy,
-    pub beep_frequency_hz: u32,
+    pub beep_frequency_hz: f32,
+    pub amplitude: f32,
     pub attenuation_db: f32,
     pub padding_ms: u64,
 }
