@@ -1,3 +1,5 @@
+use tracing::info;
+
 use crate::ms_to_samples;
 
 pub struct Chunker {
@@ -18,6 +20,10 @@ impl Chunker {
         let overlap_size_samples = ms_to_samples(overlap_ms, sample_rate);
 
         let step_samples = chunk_size_sample - overlap_size_samples;
+
+        info!("Размер чанка: {}", chunk_size_sample);
+        info!("Размер перекрытия чанка: {}", chunk_size_sample);
+        info!("Шаг: {}", chunk_size_sample);
 
         Chunker {
             chunk_size_sample,
@@ -47,9 +53,8 @@ impl Chunker {
         chunk_vec
     }
 
-    pub fn finish(mut self) -> Option<Chunk> {
+    pub fn finish(&mut self) -> Option<Chunk> {
         let len_buf = self.interval_buffer.len();
-        println!("Len buffer: {}", len_buf);
         if len_buf == 0 {
             return None;
         }
@@ -57,7 +62,7 @@ impl Chunker {
         let padding_needed = self.chunk_size_sample as usize - len_buf;
         self.interval_buffer.extend(vec![0i16; padding_needed]);
         Some(Chunk {
-            data: self.interval_buffer,
+            data: self.interval_buffer.to_vec(),
             start_sample: self.next_chunk_start_pos,
         })
     }

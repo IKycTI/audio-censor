@@ -1,19 +1,17 @@
-use cpal::Sample;
+use dasp::{sample::Duplex, Sample};
 
-pub fn convert<T>(data: &[T], channels: usize) -> Vec<i16>
+pub fn convert_to_i16_mono<T>(data: &[T], channels: u16) -> Vec<i16>
 where
-    T: Sample,
-    f32: cpal::FromSample<T>,
+    T: Sample + Duplex<f32>,
 {
     to_i16(to_mono(data, channels).as_slice())
 }
 
-fn to_mono<T>(data: &[T], channels: usize) -> Vec<f32>
+fn to_mono<T>(data: &[T], channels: u16) -> Vec<f32>
 where
-    T: Sample,
-    f32: cpal::FromSample<T>,
+    T: Sample + Duplex<f32>,
 {
-    data.chunks(channels)
+    data.chunks(channels as usize)
         .map(|chunk| {
             let sum: f32 = chunk.iter().map(|&s| s.to_sample::<f32>()).sum();
             sum / channels as f32
