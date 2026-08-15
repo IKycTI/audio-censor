@@ -11,18 +11,10 @@ channels = 1
 sample_format = "I32"
 
 [buffer]
-# число: ёмкость входного кольцевого буфера в миллисекундах
-# input_ring_capacity_ms = 1000
-# число: ёмкость выходного кольцевого буфера в миллисекундах
-# output_ring_capacity_ms = 1000
-
 # число: ёмкость кольцевого буфера в миллисекундах
-ring_capacity_ms = 1000
-
+ring_capacity_ms = 1024
 # число: длительность буфера отложенного аудио (компромисс латентность/точность)
-delay_ms = 1000
-# строка: политика при переполнении ("DropOldest" | "DropNewest" | "Block")
-overflow_policy = "DropOldest"
+delay_ms = 1024
 
 [decision]
 # строка: путь к словарю запрещённых слов (json)
@@ -32,9 +24,9 @@ max_distance = 1
 
 [framing]
 # число: длительность одного чанка для распознавателя, мс
-chunk_size_ms = 100
+chunk_size_ms = 10
 # число: перекрытие соседних чанков, мс (0 = без перекрытия)
-overlap_ms = 0
+overlap_ms = 5
 
 [recognition]
 # строка: путь к каталогу с моделью распознавания
@@ -53,6 +45,8 @@ case_sensitive = false
 strategy = "Silence"
 # число: частота бипа, если strategy = "beep"
 beep_frequency_hz = 0
+# громкость beep
+amplitude = 10
 # число: уровень приглушения в дБ, если strategy = "mute_attenuate"
 attenuation_db = 0
 # число: запас по времени до/после найденного слова, добавляемый к маске
@@ -68,7 +62,7 @@ socket_path = ""
 # строка: уровень логирования ("error" | "warn" | "info" | "debug" | "trace")
 level = "info"
 # строка (опционально): путь к файлу лога; если пусто — вывод в stdout
-file_path = ""
+file_path = "logs.log"
 
 [metrics]
 # булево: включён ли сбор метрик
