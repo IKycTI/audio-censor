@@ -1,5 +1,7 @@
 use std::collections::VecDeque;
 
+use crate::ms_to_samples;
+
 pub struct DelayBuffer<T> {
     samples: VecDeque<T>,
     next_pos: u64,
@@ -8,8 +10,8 @@ pub struct DelayBuffer<T> {
 }
 
 impl<T: Copy> DelayBuffer<T> {
-    pub fn new(delay_ms: u64, sample_rate: f32) -> Self {
-        let delay = (delay_ms as f32 * sample_rate / sample_rate).round() as u64;
+    pub fn new(delay_ms: u64, sample_rate: u32) -> Self {
+        let delay = ms_to_samples(delay_ms, sample_rate);
         DelayBuffer {
             samples: VecDeque::<T>::new(),
             next_pos: 0,
