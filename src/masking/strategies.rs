@@ -15,6 +15,12 @@ pub trait Masking<T: Default + Copy + Sample + Duplex<f32>> {
 
 pub struct Silence {}
 
+impl Silence {
+    pub fn new() -> Self {
+        Silence {}
+    }
+}
+
 impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Silence {
     fn apply(&self, original: &[T], _sample_rate: u32, _offset_interval: u64) -> Vec<T> {
         vec![T::default(); original.len()]
@@ -23,11 +29,11 @@ impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Silence {
 
 pub struct Beep {
     frequency_hz: f32,
-    amplitude: i16,
+    amplitude: f32,
 }
 
 impl Beep {
-    pub fn new(frequency_hz: f32, amplitude: i16) -> Self {
+    pub fn new(frequency_hz: f32, amplitude: f32) -> Self {
         Beep {
             frequency_hz,
             amplitude,
@@ -41,7 +47,7 @@ impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Beep {
             .iter()
             .enumerate()
             .map(|(n, _)| {
-                let val = self.amplitude as f32
+                let val = self.amplitude
                     * (2f32 * PI * self.frequency_hz * (offset_interval + n as u64) as f32
                         / sample_rate as f32)
                         .sin();

@@ -5,12 +5,11 @@ use dasp::{sample::Duplex, Sample};
 use crate::{decision::IntervalBanTime, masking::strategies::*, ms_to_samples};
 
 const DEFAULT_FADE_MS: u64 = 5;
-pub struct Masker<T, S>
+pub struct Masker<T>
 where
     T: Default + Copy + Sample + Duplex<f32>,
-    S: Masking<T>,
 {
-    strategy: S,
+    strategy: Box<dyn Masking<T>>,
     padding_sample: u64,
     fade_sample: u64,
     sample_rate: u32,
@@ -34,16 +33,15 @@ impl ActiveInterval {
     }
 }
 
-impl<T, S> Masker<T, S>
+impl<T> Masker<T>
 where
     T: Default + Copy + Sample + Duplex<f32>,
-    S: Masking<T>,
 {
-    pub fn new(strategy: S, padding_ms: u64, sample_rate: u32) -> Self {
+    pub fn new(strategy: Box<dyn Masking<T>>, padding_ms: u64, sample_rate: u32) -> Self {
         let padding_sample = ms_to_samples(padding_ms, sample_rate);
         let fade_sample = ms_to_samples(DEFAULT_FADE_MS, sample_rate);
 
-        Masker::<T, S> {
+        Masker::<T> {
             strategy,
             padding_sample,
             fade_sample,
