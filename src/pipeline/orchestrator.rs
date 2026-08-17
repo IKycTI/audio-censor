@@ -13,7 +13,7 @@ use ringbuf::{
     traits::{Consumer, Producer},
     HeapCons, HeapProd,
 };
-use tracing::{error, info};
+use tracing::{debug, error, info};
 use vosk::Model;
 
 use crate::{
@@ -344,6 +344,8 @@ where
         if words.is_empty() {
             return;
         }
+
+        debug!("Распознанные слова: \n {:?}", words);
 
         if let Some(intervals) = self.engine.get_batch_ban_time(words) {
             for interval in intervals {

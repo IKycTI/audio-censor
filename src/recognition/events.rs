@@ -1,3 +1,4 @@
+#[derive(Debug)]
 pub struct TimedWord {
     pub word: String,
     pub start_ms: u64,
