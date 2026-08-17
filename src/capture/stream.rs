@@ -1,17 +1,16 @@
 use cpal::{BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, StreamConfig};
 use ringbuf::{traits::Producer, HeapProd};
 use rodio::DeviceTrait;
-use std::sync::{
-    atomic::{AtomicU64, Ordering},
-    Arc,
-};
+use std::sync::{atomic::Ordering, Arc};
 use tracing::{error, info};
+
+use crate::metrics::Metrics;
 
 pub fn build_capture_stream<T>(
     device: Device,
     stream_config: StreamConfig,
     mut producer: HeapProd<T>,
-    dropped_samples: Arc<AtomicU64>,
+    metrics: Arc<Metrics>,
 ) -> Result<Stream, BuildStreamError>
 where
     T: SizedSample + Send + 'static,
@@ -27,7 +26,9 @@ where
                 pushed
             );
             if pushed < data.len() {
-                dropped_samples.fetch_add((data.len() - pushed) as u64, Ordering::Relaxed);
+                metrics
+                    .dropped_input_samples
+                    .fetch_add((data.len() - pushed) as u64, Ordering::Relaxed);
             }
         },
         move |e| error!("Ошибка входного потока: {}", e),

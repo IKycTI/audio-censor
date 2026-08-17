@@ -1,10 +1,10 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use cpal::{traits::StreamTrait, Sample, SizedSample, Stream};
@@ -23,6 +23,7 @@ use crate::{
     decision::DecisionEngine,
     framing::{convert_to_i16_mono, Chunker},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
+    metrics::Metrics,
     playback,
     recognition::{SpeechRecognizer, TimedWord},
     MS_PER_SEC,
@@ -46,8 +47,10 @@ where
     playback_stream: Stream,
     channels: u16,
     running: Arc<AtomicBool>,
-    dropped_output_samples: Arc<AtomicU64>, // метрика — переполнение output-буфера (DropNewest)
+    metrics: Arc<Metrics>,
     raw_read_buf: Vec<T>,
+    last_metrics_export: Instant,
+    metrics_export_interval: Duration,
     output_drain_wait: Duration,
 }
 
@@ -84,6 +87,8 @@ where
                 return Err(OrchestratorError::ModelLoadError(err));
             }
         };
+
+        let metrics = Arc::new(Metrics::default());
 
         let chunker = Chunker::new(
             settings.framing.chunk_size_ms,
@@ -146,13 +151,11 @@ where
             }
         };
 
-        let drop_input: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-
         let input_stream = match capture::build_capture_stream(
             input_device,
             input_config,
             input_producer,
-            drop_input,
+            Arc::clone(&metrics),
         ) {
             Ok(stream) => stream,
             Err(e) => {
@@ -174,13 +177,11 @@ where
             }
         };
 
-        let drop_output: Arc<AtomicU64> = Arc::new(AtomicU64::new(0));
-
         let output_stream = match playback::build_playback_stream(
             output_device,
             output_config,
             output_consumer,
-            drop_output,
+            Arc::clone(&metrics),
         ) {
             Ok(stream) => stream,
             Err(e) => {
@@ -201,8 +202,10 @@ where
             playback_stream: output_stream,
             channels: settings.audio.channels,
             running: Arc::new(AtomicBool::new(true)),
-            dropped_output_samples: Arc::new(AtomicU64::new(0)),
+            metrics: Arc::clone(&metrics),
             raw_read_buf: vec![T::default(); raw_read_buf_capacity],
+            last_metrics_export: Instant::now(),
+            metrics_export_interval: Duration::from_millis(settings.metrics.export_interval_ms),
             output_drain_wait,
         })
     }
@@ -216,6 +219,19 @@ where
     }
     pub fn run(&mut self) {
         while self.running.load(Ordering::Relaxed) {
+            if self.last_metrics_export.elapsed() >= self.metrics_export_interval {
+                let snap = self.metrics.snapshot();
+                info!(
+                    dropped_input = snap.dropped_input_samples,
+                    dropped_output = snap.dropped_output_samples,
+                    underruns = snap.underrun_samples,
+                    words_recognized = snap.words_recognized,
+                    words_censored = snap.words_censored,
+                    // recognizer_errors = snap.recognizer_errors,
+                    "метрики"
+                );
+                self.last_metrics_export = Instant::now();
+            }
             // 1. Читаем всё, что успело накопиться в input ring buffer
             let n = self.consumer.pop_slice(&mut self.raw_read_buf);
 
@@ -249,6 +265,9 @@ where
                 let words = self.recognizer.push_chunk(&chunk);
                 let len_w = words.len();
                 info!("Получено {} слов", len_w);
+                self.metrics
+                    .words_recognized
+                    .fetch_add(len_w as u64, Ordering::Relaxed);
                 self.handle_words(&words);
             }
 
@@ -269,7 +288,8 @@ where
             let pushed = self.producer.push_slice(&processed);
             info!("Отдано на выход: {}", pushed);
             if pushed < processed.len() {
-                self.dropped_output_samples
+                self.metrics
+                    .dropped_output_samples
                     .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
             }
         }
@@ -317,7 +337,8 @@ where
             let processed = self.masker.process(&tail_samples);
             let pushed = self.producer.push_slice(&processed);
             if pushed < processed.len() {
-                self.dropped_output_samples
+                self.metrics
+                    .dropped_output_samples
                     .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
             }
         }
@@ -331,7 +352,7 @@ where
         }
 
         info!(
-            dropped_output_samples = self.dropped_output_samples.load(Ordering::Relaxed),
+            dropped_output_samples = self.metrics.dropped_output_samples.load(Ordering::Relaxed),
             "Оркестратор остановлен"
         );
     }
@@ -348,6 +369,9 @@ where
         debug!("Распознанные слова: \n {:?}", words);
 
         if let Some(intervals) = self.engine.get_batch_ban_time(words) {
+            self.metrics
+                .words_censored
+                .fetch_add(intervals.len() as u64, Ordering::Relaxed);
             for interval in intervals {
                 self.masker.add_interval(&interval);
             }
