@@ -47,6 +47,9 @@ where
     playback_stream: Stream,
     channels: u16,
     running: Arc<AtomicBool>,
+    paused: Arc<AtomicBool>,
+    dict_reload_req: Arc<AtomicBool>,
+    metrics_enabled: bool,
     metrics: Arc<Metrics>,
     raw_read_buf: Vec<T>,
     last_metrics_export: Instant,
@@ -202,6 +205,9 @@ where
             playback_stream: output_stream,
             channels: settings.audio.channels,
             running: Arc::new(AtomicBool::new(true)),
+            paused: Arc::new(AtomicBool::new(false)),
+            dict_reload_req: Arc::new(AtomicBool::new(false)),
+            metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
             raw_read_buf: vec![T::default(); raw_read_buf_capacity],
             last_metrics_export: Instant::now(),
@@ -219,7 +225,22 @@ where
     }
     pub fn run(&mut self) {
         while self.running.load(Ordering::Relaxed) {
-            if self.last_metrics_export.elapsed() >= self.metrics_export_interval {
+            if self.paused.load(Ordering::Relaxed) {
+                thread::sleep(Duration::from_millis(50));
+                continue;
+            }
+            if self.dict_reload_req.swap(false, Ordering::Relaxed) {
+                // match load_banned_words(&self.dict_path) {
+                //     Ok(new_dict) => {
+                //         self.engine.replace_dictionary(new_dict);
+                //         info!("Словарь перезагружен");
+                //     }
+                //     Err(e) => error!("Не удалось перезагрузить словарь: {}", e),
+                // }
+            }
+            if self.metrics_enabled
+                && self.last_metrics_export.elapsed() >= self.metrics_export_interval
+            {
                 let snap = self.metrics.snapshot();
                 info!(
                     dropped_input = snap.dropped_input_samples,
@@ -360,7 +381,17 @@ where
     pub fn running_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.running)
     }
+    pub fn paused_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.paused)
+    }
 
+    pub fn dict_reload_handle(&self) -> Arc<AtomicBool> {
+        Arc::clone(&self.dict_reload_req)
+    }
+
+    pub fn metrics_handle(&self) -> Arc<Metrics> {
+        Arc::clone(&self.metrics)
+    }
     fn handle_words(&mut self, words: &[TimedWord]) {
         if words.is_empty() {
             return;
