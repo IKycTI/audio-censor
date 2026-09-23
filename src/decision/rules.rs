@@ -34,6 +34,10 @@ impl Rules {
         }
         false
     }
+
+    pub fn replace_dictionary(&mut self, new_dict: HashSet<String>) {
+        self.bad_words = new_dict;
+    }
 }
 
 fn normalize_word(word: &str) -> String {

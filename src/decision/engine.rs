@@ -39,6 +39,10 @@ impl DecisionEngine {
             Some(ban_times)
         }
     }
+
+    pub fn replace_dictionary(&mut self, new_dict: HashSet<String>) {
+        self.rules.replace_dictionary(new_dict);
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]

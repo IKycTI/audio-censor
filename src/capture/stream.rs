@@ -2,7 +2,7 @@ use cpal::{BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, Str
 use ringbuf::{traits::Producer, HeapProd};
 use rodio::DeviceTrait;
 use std::sync::{atomic::Ordering, Arc};
-use tracing::{error, info};
+use tracing::{debug, error};
 
 use crate::metrics::Metrics;
 
@@ -20,7 +20,7 @@ where
         move |data: &[T], _: &InputCallbackInfo| {
             let pushed = producer.push_slice(data);
 
-            info!(
+            debug!(
                 "callback: получено {} сэмплов, записано {}",
                 data.len(),
                 pushed

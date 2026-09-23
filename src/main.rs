@@ -20,7 +20,6 @@ struct Cli {
     /// Путь к файлу конфигурации
     #[arg(short = 'c', long, value_name = "PATH")]
     config_path: Option<PathBuf>,
-
     /// Показать устройства вместо запуска start
     #[arg(short, long, value_enum, value_name = "FILTER")]
     show_device: Option<DeviceFilter>,

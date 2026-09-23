@@ -23,7 +23,7 @@ impl SpeechRecognizer {
         }
     }
 
-    pub fn push_chunk(&mut self, chunk: &Chunk) -> Vec<TimedWord> {
+    pub fn push_chunk(&mut self, chunk: &Chunk) -> Result<Vec<TimedWord>, RecognizerError> {
         let accept_res = self.recognizer.accept_waveform(&chunk.data);
 
         match accept_res {
@@ -37,20 +37,23 @@ impl SpeechRecognizer {
                         .single()
                         .expect("При получении результатов Vosk произошла ошибка");
 
-                    convert_word_to_timed_word(self.stream_offset_ms, words.result)
+                    Ok(convert_word_to_timed_word(
+                        self.stream_offset_ms,
+                        words.result,
+                    ))
                 }
                 DecodingState::Running => {
                     info!("Чанк добавлен, слова не распознаны");
-                    Vec::new()
+                    Ok(Vec::new())
                 }
                 DecodingState::Failed => {
                     error!("Не удалось добавить чанк");
-                    Vec::new()
+                    return Err(RecognizerError::DecodingFailed);
                 }
             },
             Err(err) => {
                 error!("Ошибка придобавлении чанка: {}", err.to_string());
-                return Vec::new();
+                return Err(RecognizerError::AcceptError(err.to_string()));
             }
         }
     }
@@ -75,4 +78,9 @@ fn convert_word_to_timed_word(stream_offset_ms: u64, words: Vec<Word<'_>>) -> Ve
             TimedWord::new(w.word, start, end)
         })
         .collect()
+}
+
+pub enum RecognizerError {
+    DecodingFailed,
+    AcceptError(String),
 }

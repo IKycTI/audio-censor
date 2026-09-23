@@ -40,6 +40,7 @@ where
     chunker: Chunker,
     _model: Model,
     recognizer: SpeechRecognizer,
+    dict_path: String,
     engine: DecisionEngine,
     delay_buffer: DelayBuffer<T>,
     masker: Masker<T>,
@@ -66,16 +67,7 @@ where
             "Загрузка словаря запрещенных слов из {}...",
             settings.decision.words_dict_path
         );
-        let word_dict = match BanSet::new(&settings.decision.words_dict_path) {
-            Ok(dict) => {
-                info!("Словарь загружен");
-                dict
-            }
-            Err(e) => {
-                return Err(OrchestratorError::WordDictError(e));
-            }
-        };
-
+        let word_dict = load_banned_words(&settings.decision.words_dict_path)?;
         info!("Загрузка модели из {}...", settings.recognition.model_path);
         let model = match Model::new(&settings.recognition.model_path) {
             Some(m) => {
@@ -198,6 +190,7 @@ where
             chunker,
             _model: model,
             recognizer,
+            dict_path: settings.decision.words_dict_path.clone(),
             engine,
             delay_buffer,
             masker,
@@ -215,6 +208,7 @@ where
             output_drain_wait,
         })
     }
+
     pub fn start_streams(&self) -> Result<(), cpal::PlayStreamError> {
         info!("Запуск потоков вводы и вывода");
         self.capture_stream.play()?;
@@ -223,6 +217,7 @@ where
         info!("Поток вывода запушен");
         Ok(())
     }
+
     pub fn run(&mut self) {
         while self.running.load(Ordering::Relaxed) {
             if self.paused.load(Ordering::Relaxed) {
@@ -230,13 +225,18 @@ where
                 continue;
             }
             if self.dict_reload_req.swap(false, Ordering::Relaxed) {
-                // match load_banned_words(&self.dict_path) {
-                //     Ok(new_dict) => {
-                //         self.engine.replace_dictionary(new_dict);
-                //         info!("Словарь перезагружен");
-                //     }
-                //     Err(e) => error!("Не удалось перезагрузить словарь: {}", e),
-                // }
+                match load_banned_words(&self.dict_path) {
+                    Ok(new_dict) => {
+                        self.engine.replace_dictionary(new_dict.words);
+                        info!("Словарь перезагружен");
+                    }
+                    Err(err) => match err {
+                        OrchestratorError::WordDictError(e) => {
+                            error!("Не удалось перезагрузить словарь: {}", e);
+                        }
+                        _ => error!("Неопознанная ошибка при перезагрузке словаря"),
+                    },
+                }
             }
             if self.metrics_enabled
                 && self.last_metrics_export.elapsed() >= self.metrics_export_interval
@@ -248,7 +248,7 @@ where
                     underruns = snap.underrun_samples,
                     words_recognized = snap.words_recognized,
                     words_censored = snap.words_censored,
-                    // recognizer_errors = snap.recognizer_errors,
+                    recognizer_errors = snap.recognizer_errors,
                     "метрики"
                 );
                 self.last_metrics_export = Instant::now();
@@ -261,53 +261,62 @@ where
                 thread::sleep(Duration::from_millis(2));
                 continue;
             }
-            info!("Прочитано {} сэмплов из input buffer", n);
+            debug!("Прочитано {} сэмплов из input buffer", n);
 
             let raw_samples = &self.raw_read_buf[..n];
             let len_rs = raw_samples.len();
             // 2. Сырые сэмплы (в исходном типе T) — сразу в delay_buffer,
             //    независимо от того, что с ними будет решено дальше
-            info!("В delay_buffer отправлено {} сырых семплов", len_rs);
+            debug!("В delay_buffer отправлено {} сырых семплов", len_rs);
             self.delay_buffer.push(raw_samples);
 
             // 3. Параллельно — конвертация в i16-моно для распознавания
-            info!("На конвертацию отправлено {} сырых семплов", len_rs);
+            debug!("На конвертацию отправлено {} сырых семплов", len_rs);
             let converted = convert_to_i16_mono(raw_samples, self.channels);
             let len_c = converted.len();
-            info!("Сконвертировано {} семплов", len_c);
+            debug!("Сконвертировано {} семплов", len_c);
 
             // 4. Нарезка на чанки нужного размера
             let chunks = self.chunker.push_samples(&converted);
             let len_chunks = chunks.len();
-            info!("Создано чанков: {}", len_chunks);
+            debug!("Создано чанков: {}", len_chunks);
 
             // 5. Каждый готовый чанк — в распознаватель, затем в decision engine
             for chunk in chunks {
                 let words = self.recognizer.push_chunk(&chunk);
-                let len_w = words.len();
-                info!("Получено {} слов", len_w);
-                self.metrics
-                    .words_recognized
-                    .fetch_add(len_w as u64, Ordering::Relaxed);
-                self.handle_words(&words);
+                match words {
+                    Ok(w) => {
+                        let len_w = w.len();
+                        info!("Получено {} слов", len_w);
+                        self.metrics
+                            .words_recognized
+                            .fetch_add(len_w as u64, Ordering::Relaxed);
+                        self.handle_words(&w);
+                    }
+                    Err(_) => {
+                        self.metrics
+                            .recognizer_errors
+                            .fetch_add(1, Ordering::Relaxed);
+                    }
+                }
             }
 
             // 6. Забираем из delay_buffer то, что уже "отлежало" delay_ms
             let ready = self.delay_buffer.pop_ready();
             let len_r = ready.len();
-            info!("Cемлов готово: {}", len_r);
+            debug!("Cемлов готово: {}", len_r);
 
             if ready.is_empty() {
                 continue;
             }
 
             // 7. Применяем маску (или passthrough) к готовым сэмплам
-            info!("Применение маски...");
+            debug!("Применение маски...");
             let processed = self.masker.process(&ready);
 
             // 8. Отдаём обработанные сэмплы в output ring buffer
             let pushed = self.producer.push_slice(&processed);
-            info!("Отдано на выход: {}", pushed);
+            debug!("Отдано на выход: {}", pushed);
             if pushed < processed.len() {
                 self.metrics
                     .dropped_output_samples
@@ -336,15 +345,19 @@ where
             let chunks = self.chunker.push_samples(&converted);
 
             for chunk in chunks {
-                let words = self.recognizer.push_chunk(&chunk);
-                self.handle_words(&words);
+                match self.recognizer.push_chunk(&chunk) {
+                    Ok(words) => self.handle_words(&words),
+                    Err(_) => (),
+                };
             }
         }
 
         // 3. Дожать хвост чанкера — неполный кусок, оставшийся во внутреннем накопителе
         if let Some(tail_chunk) = self.chunker.finish() {
-            let words = self.recognizer.push_chunk(&tail_chunk);
-            self.handle_words(&words);
+            match self.recognizer.push_chunk(&tail_chunk) {
+                Ok(words) => self.handle_words(&words),
+                Err(_) => (),
+            };
         }
 
         // 4. Дожать хвост распознавателя — незавершённая фраза (finish потребляет recognizer)
@@ -381,6 +394,7 @@ where
     pub fn running_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.running)
     }
+
     pub fn paused_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.paused)
     }
@@ -408,6 +422,18 @@ where
             }
         }
     }
+}
+
+fn load_banned_words(dict_path: &str) -> Result<BanSet, OrchestratorError> {
+    match BanSet::new(dict_path) {
+        Ok(dict) => {
+            info!("Словарь загружен");
+            return Ok(dict);
+        }
+        Err(e) => {
+            return Err(OrchestratorError::WordDictError(e));
+        }
+    };
 }
 
 pub enum OrchestratorError {
