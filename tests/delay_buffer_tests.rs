@@ -1,7 +1,7 @@
 use audio_censor::buffer::DelayBuffer;
 
 /// Сэмпл-рейт 1000 Гц → 1 мс = 10 сэмплов.
-const SAMPLE_RATE: f32 = 1000.0;
+const SAMPLE_RATE: u32 = 1000;
 
 // ── Базовое поведение ──────────────────────────────────────────────
 

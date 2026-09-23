@@ -2,8 +2,8 @@ use audio_censor::decision::engine::{DecisionEngine, IntervalBanTime};
 use audio_censor::recognition::events::TimedWord;
 use std::collections::HashSet;
 
-fn make_engine(words: &[&'static str], max_distance: usize) -> DecisionEngine {
-    let bad_words: HashSet<&'static str> = words.iter().copied().collect();
+fn make_engine(words: &[&'static str], max_distance: u64) -> DecisionEngine {
+    let bad_words: HashSet<String> = words.iter().copied().map(|w| w.to_string()).collect();
     DecisionEngine::new(bad_words, max_distance)
 }
 

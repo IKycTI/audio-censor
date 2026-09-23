@@ -1,4 +1,4 @@
-use audio_censor::framing::convert;
+use audio_censor::framing::convert_to_i16_mono;
 
 #[test]
 fn mono_passthrough_i16() {
