@@ -25,7 +25,7 @@ use crate::{
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
-    playback,
+    ms_to_samples, ms_to_stream_pos, playback,
     recognition::{SpeechRecognizer, TimedWord},
 };
 
@@ -128,11 +128,15 @@ where
         let output_drain_wait =
             Duration::from_millis(settings.buffer.ring_capacity_ms as u64 + 50u64);
 
-        let (input_producer, input_consumer) =
-            buffer::create_scsp::<T>(settings.buffer.ring_capacity_ms);
+        let ring_capacity = ms_to_stream_pos(
+            settings.buffer.ring_capacity_ms as u64,
+            settings.audio.sample_rate,
+            settings.audio.channels,
+        ) as usize;
 
-        let (output_producer, output_consumer) =
-            buffer::create_scsp::<T>(settings.buffer.ring_capacity_ms);
+        let (input_producer, input_consumer) = buffer::create_scsp::<T>(ring_capacity);
+
+        let (output_producer, output_consumer) = buffer::create_scsp::<T>(ring_capacity);
 
         let input_device = match capture::get_device(&settings.audio.input_device) {
             Ok(device) => device,
