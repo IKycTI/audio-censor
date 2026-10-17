@@ -1,32 +1,32 @@
 use std::{
     sync::{
-        atomic::{AtomicBool, Ordering},
         Arc,
+        atomic::{AtomicBool, Ordering},
     },
     thread,
     time::{Duration, Instant},
 };
 
-use cpal::{traits::StreamTrait, Sample, SizedSample, Stream};
+use cpal::{Sample, SizedSample, Stream, traits::StreamTrait};
 use dasp::sample::Duplex;
 use ringbuf::{
-    traits::{Consumer, Producer},
     HeapCons, HeapProd,
+    traits::{Consumer, Producer},
 };
 use tracing::{debug, error, info};
 use vosk::Model;
 
 use crate::{
+    MS_PER_SEC,
     buffer::{self, DelayBuffer},
     capture,
     config::{BanSet, Settings},
     decision::DecisionEngine,
-    framing::{convert_to_i16_mono, Chunker},
+    framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
     playback,
     recognition::{SpeechRecognizer, TimedWord},
-    MS_PER_SEC,
 };
 
 const EXTEND_RAW_BUF: usize = 100;
@@ -118,6 +118,7 @@ where
             strategy,
             settings.masking.padding_ms,
             settings.audio.sample_rate,
+            settings.audio.channels,
         );
 
         let raw_read_buf_capacity =

@@ -1,4 +1,4 @@
-use dasp::{sample::Duplex, Sample};
+use dasp::{Sample, sample::Duplex};
 use serde::Deserialize;
 use std::f32::consts::PI;
 
@@ -10,7 +10,13 @@ pub enum MaskingStrategy {
 }
 
 pub trait Masking<T: Default + Copy + Sample + Duplex<f32>> {
-    fn apply(&self, original: &[T], sample_rate: u32, offset_interval: u64) -> Vec<T>;
+    fn apply(
+        &self,
+        original: &[T],
+        sample_rate: u32,
+        offset_interval: u64,
+        channels: u16,
+    ) -> Vec<T>;
 }
 
 pub struct Silence {}
@@ -22,7 +28,13 @@ impl Silence {
 }
 
 impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Silence {
-    fn apply(&self, original: &[T], _sample_rate: u32, _offset_interval: u64) -> Vec<T> {
+    fn apply(
+        &self,
+        original: &[T],
+        _sample_rate: u32,
+        _offset_interval: u64,
+        _channels: u16,
+    ) -> Vec<T> {
         vec![T::default(); original.len()]
     }
 }
@@ -42,13 +54,22 @@ impl Beep {
 }
 
 impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Beep {
-    fn apply(&self, original: &[T], sample_rate: u32, offset_interval: u64) -> Vec<T> {
+    fn apply(
+        &self,
+        original: &[T],
+        sample_rate: u32,
+        offset_interval: u64,
+        channels: u16,
+    ) -> Vec<T> {
         original
             .iter()
             .enumerate()
             .map(|(n, _)| {
                 let val = self.amplitude
-                    * (2f32 * PI * self.frequency_hz * (offset_interval + n as u64) as f32
+                    * (2f32
+                        * PI
+                        * self.frequency_hz
+                        * ((offset_interval + n as u64) / channels as u64) as f32
                         / sample_rate as f32)
                         .sin();
                 T::from_sample(val.clamp(-1f32, 1f32))
@@ -70,7 +91,13 @@ impl MuteAttenuate {
 }
 
 impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for MuteAttenuate {
-    fn apply(&self, original: &[T], _sample_rate: u32, _offset_interval: u64) -> Vec<T> {
+    fn apply(
+        &self,
+        original: &[T],
+        _sample_rate: u32,
+        _offset_interval: u64,
+        _channels: u16,
+    ) -> Vec<T> {
         original
             .iter()
             .map(|s| {

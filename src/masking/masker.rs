@@ -2,7 +2,7 @@ use std::marker::PhantomData;
 
 use dasp::{sample::Duplex, Sample};
 
-use crate::{decision::IntervalBanTime, masking::strategies::*, ms_to_samples};
+use crate::{decision::IntervalBanTime, masking::strategies::*, ms_to_stream_pos};
 
 const DEFAULT_FADE_MS: u64 = 5;
 pub struct Masker<T>
@@ -13,6 +13,7 @@ where
     padding_sample: u64,
     fade_sample: u64,
     sample_rate: u32,
+    channels: u16,
     active_intervals: Vec<ActiveInterval>,
     _marker: PhantomData<T>,
 }
@@ -20,16 +21,11 @@ where
 struct ActiveInterval {
     start: u64,
     end: u64,
-    samples_masked: u64,
 }
 
 impl ActiveInterval {
-    pub fn new(start: u64, end: u64, samples_masked: u64) -> Self {
-        ActiveInterval {
-            start,
-            end,
-            samples_masked,
-        }
+    pub fn new(start: u64, end: u64) -> Self {
+        ActiveInterval { start, end }
     }
 }
 
@@ -37,26 +33,35 @@ impl<T> Masker<T>
 where
     T: Default + Copy + Sample + Duplex<f32>,
 {
-    pub fn new(strategy: Box<dyn Masking<T>>, padding_ms: u64, sample_rate: u32) -> Self {
-        let padding_sample = ms_to_samples(padding_ms, sample_rate);
-        let fade_sample = ms_to_samples(DEFAULT_FADE_MS, sample_rate);
+    pub fn new(
+        strategy: Box<dyn Masking<T>>,
+        padding_ms: u64,
+        sample_rate: u32,
+        channels: u16,
+    ) -> Self {
+        let padding_sample = ms_to_stream_pos(padding_ms, sample_rate, channels);
+        let fade_sample = ms_to_stream_pos(DEFAULT_FADE_MS, sample_rate, channels);
 
         Masker::<T> {
             strategy,
             padding_sample,
             fade_sample,
             sample_rate,
+            channels,
             active_intervals: Vec::new(),
             _marker: PhantomData::default(),
         }
     }
 
     pub fn add_interval(&mut self, interval: &IntervalBanTime) {
-        let start = interval.start_time.saturating_sub(self.padding_sample);
-        let end = interval.end_time + self.padding_sample;
+        let start = ms_to_stream_pos(interval.start_time, self.sample_rate, self.channels)
+            .saturating_sub(self.padding_sample);
+        let end = ms_to_stream_pos(interval.end_time, self.sample_rate, self.channels)
+            + self.padding_sample
+            + self.channels as u64
+            - 1;
 
-        self.active_intervals
-            .push(ActiveInterval::new(start, end, 0));
+        self.active_intervals.push(ActiveInterval::new(start, end));
     }
 
     pub fn process(&mut self, input: &[(u64, T)]) -> Vec<T> {
@@ -86,13 +91,18 @@ where
                     let segment = &input[start..i];
                     let original: Vec<T> = segment.iter().map(|(_, s)| *s).collect();
 
+                    // Смещение от начала интервала по позиции в потоке, а не по счётчику
+                    // обработанных сэмплов: start выровнен по кадру, поэтому номер кадра
+                    // и номер канала в стратегии получаются верными, даже если интервал
+                    // пришёл с опозданием и сегмент начинается с середины кадра
+                    let offset_interval = segment[0].0 - self.active_intervals[idx].start;
+
                     let masked = self.strategy.apply(
                         &original,
                         self.sample_rate,
-                        self.active_intervals[idx].samples_masked,
+                        offset_interval,
+                        self.channels,
                     );
-
-                    self.active_intervals[idx].samples_masked += original.len() as u64;
 
                     output.extend(masked);
                 }
@@ -110,6 +120,7 @@ where
             .iter()
             .position(|iv| pos >= iv.start && pos <= iv.end)
     }
+
     fn apply_fades(&self, output: &mut [T], input: &[(u64, T)]) {
         let fade_samples = self.fade_sample as usize;
         let mut i = 0;
