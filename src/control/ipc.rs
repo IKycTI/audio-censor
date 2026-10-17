@@ -15,6 +15,7 @@ pub struct ControlHandle {
     paused: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
     dict_reload_requested: Arc<AtomicBool>,
+    metrics_file: String,
 }
 
 impl ControlHandle {
@@ -23,12 +24,14 @@ impl ControlHandle {
         paused: Arc<AtomicBool>,
         metrics: Arc<Metrics>,
         dict_reload_requested: Arc<AtomicBool>,
+        metrics_file: String,
     ) -> Self {
         Self {
             running,
             paused,
             metrics,
             dict_reload_requested,
+            metrics_file,
         }
     }
 
@@ -49,6 +52,17 @@ impl ControlHandle {
             ControlCommand::ReloadDict => {
                 self.dict_reload_requested.store(true, Ordering::Relaxed);
                 "OK: reload requested".into()
+            }
+            ControlCommand::SaveMetrics => {
+                // Счётчики атомарные, поэтому снимок можно сделать прямо из IPC-потока,
+                // не дёргая оркестратор
+                if self.metrics_file.is_empty() {
+                    return "ERROR: metrics_file не задан в конфиге".into();
+                }
+                match self.metrics.save(&self.metrics_file) {
+                    Ok(()) => format!("OK: metrics saved to {}", self.metrics_file),
+                    Err(e) => format!("ERROR: {}", e),
+                }
             }
             ControlCommand::Shutdown => {
                 self.running.store(false, Ordering::Relaxed);

@@ -84,6 +84,7 @@ where
     info!("Запуск audio-censor");
     let socket_path = settings.control.socket_path.clone();
     let enabled = settings.control.enabled;
+    let metrics_file = settings.metrics.metrics_file.clone();
     let mut orchestrator = match Orchestrator::<T>::new(settings) {
         Ok(o) => o,
         Err(err) => {
@@ -133,6 +134,7 @@ where
         orchestrator.paused_handle(),
         orchestrator.metrics_handle(),
         orchestrator.dict_reload_handle(),
+        metrics_file,
     );
 
     if enabled {

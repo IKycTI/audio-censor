@@ -10,6 +10,8 @@ pub enum ControlCommand {
     Resume,
     /// Перечитать словарь запрещённых слов без перезапуска
     ReloadDict,
+    /// Выгрузить текущие метрики в файл (metrics.metrics_file)
+    SaveMetrics,
     /// Корректно остановить демон
     Shutdown,
 }
@@ -21,6 +23,7 @@ impl ControlCommand {
             ControlCommand::Pause => "pause",
             ControlCommand::Resume => "resume",
             ControlCommand::ReloadDict => "reload_dict",
+            ControlCommand::SaveMetrics => "save_metrics",
             ControlCommand::Shutdown => "shutdown",
         }
     }
@@ -31,6 +34,7 @@ impl ControlCommand {
             "pause" => Ok(ControlCommand::Pause),
             "resume" => Ok(ControlCommand::Resume),
             "reload_dict" => Ok(ControlCommand::ReloadDict),
+            "save_metrics" => Ok(ControlCommand::SaveMetrics),
             "shutdown" => Ok(ControlCommand::Shutdown),
             other => Err(format!("неизвестная команда: {}", other)),
         }

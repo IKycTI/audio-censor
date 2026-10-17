@@ -22,6 +22,16 @@ impl Metrics {
             recognizer_errors: self.recognizer_errors.load(Ordering::Relaxed),
         }
     }
+
+    pub fn save(&self, path: &str) -> Result<(), String> {
+        let snapshot = self.snapshot();
+        let serialized = serde_json::to_string_pretty(&snapshot).map_err(|e| e.to_string())?;
+        // Пишем во временный файл и переименовываем: rename атомарен в пределах ФС,
+        // поэтому внешний читатель никогда не увидит наполовину записанный JSON
+        let tmp_path = format!("{path}.tmp");
+        std::fs::write(&tmp_path, serialized).map_err(|e| e.to_string())?;
+        std::fs::rename(&tmp_path, path).map_err(|e| e.to_string())
+    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]

@@ -99,6 +99,7 @@ pub struct LoggingSettings {
 pub struct MetricsSettings {
     pub enabled: bool,
     pub export_interval_ms: u64,
+    pub metrics_file: String,
 }
 
 #[derive(serde::Deserialize)]

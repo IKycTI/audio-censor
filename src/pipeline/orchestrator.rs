@@ -52,6 +52,7 @@ where
     dict_reload_req: Arc<AtomicBool>,
     metrics_enabled: bool,
     metrics: Arc<Metrics>,
+    metrics_file: String,
     raw_read_buf: Vec<T>,
     last_metrics_export: Instant,
     metrics_export_interval: Duration,
@@ -202,6 +203,7 @@ where
             dict_reload_req: Arc::new(AtomicBool::new(false)),
             metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
+            metrics_file: settings.metrics.metrics_file.clone(),
             raw_read_buf: vec![T::default(); raw_read_buf_capacity],
             last_metrics_export: Instant::now(),
             metrics_export_interval: Duration::from_millis(settings.metrics.export_interval_ms),
@@ -324,6 +326,7 @@ where
             }
         }
     }
+
     pub fn shutdown(mut self) {
         // 1. Остановить приём новых данных — дальше в input ring buffer ничего не добавится
         if let Err(e) = self.capture_stream.pause() {
@@ -389,6 +392,17 @@ where
             dropped_output_samples = self.metrics.dropped_output_samples.load(Ordering::Relaxed),
             "Оркестратор остановлен"
         );
+
+        // 7. Выгрузить итоговые метрики — после всех дренажей, чтобы счётчики были окончательными
+        if self.metrics_enabled && !self.metrics_file.is_empty() {
+            match self.metrics.save(&self.metrics_file) {
+                Ok(()) => info!("Метрики сохранены в {}", self.metrics_file),
+                Err(e) => error!(
+                    "Не удалось сохранить метрики в {}: {}",
+                    self.metrics_file, e
+                ),
+            }
+        }
     }
 
     pub fn running_handle(&self) -> Arc<AtomicBool> {
