@@ -24,8 +24,10 @@ use crate::{
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
-    ms_to_stream_pos, playback,
-    recognition::{SpeechRecognizer, TimedWord},
+    ms_to_stream_pos,
+    pipeline::RecognitionWorker,
+    playback,
+    recognition::SpeechRecognizer,
     whole_frames,
 };
 
@@ -38,11 +40,7 @@ where
 {
     consumer: HeapCons<T>,
     producer: HeapProd<T>,
-    chunker: Chunker,
-    _model: Model,
-    recognizer: SpeechRecognizer,
-    dict_path: String,
-    engine: DecisionEngine,
+    recognition: RecognitionWorker,
     delay_buffer: DelayBuffer<T>,
     masker: Masker<T>,
     capture_stream: Stream,
@@ -101,6 +99,18 @@ where
         };
 
         let engine = DecisionEngine::new(word_dict.words, settings.decision.max_distance);
+
+        // Распознавание — в отдельном потоке, чтобы декодирование Vosk не задерживало выдачу звука
+        let dict_reload_req = Arc::new(AtomicBool::new(false));
+        let recognition = RecognitionWorker::spawn(
+            model,
+            chunker,
+            recognizer,
+            engine,
+            settings.decision.words_dict_path.clone(),
+            Arc::clone(&dict_reload_req),
+            Arc::clone(&metrics),
+        )?;
 
         let delay_buffer = DelayBuffer::new(
             settings.buffer.delay_ms,
@@ -201,11 +211,7 @@ where
         Ok(Orchestrator {
             consumer: input_consumer,
             producer: output_producer,
-            chunker,
-            _model: model,
-            recognizer,
-            dict_path: settings.decision.words_dict_path.clone(),
-            engine,
+            recognition,
             delay_buffer,
             masker,
             capture_stream: input_stream,
@@ -213,7 +219,7 @@ where
             channels: settings.audio.channels,
             running: Arc::new(AtomicBool::new(true)),
             paused: Arc::new(AtomicBool::new(false)),
-            dict_reload_req: Arc::new(AtomicBool::new(false)),
+            dict_reload_req,
             metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
             metrics_file: settings.metrics.metrics_file.clone(),
@@ -238,20 +244,6 @@ where
             if self.paused.load(Ordering::Relaxed) {
                 thread::sleep(Duration::from_millis(50));
                 continue;
-            }
-            if self.dict_reload_req.swap(false, Ordering::Relaxed) {
-                match load_banned_words(&self.dict_path) {
-                    Ok(new_dict) => {
-                        self.engine.replace_dictionary(new_dict.words);
-                        info!("Словарь перезагружен");
-                    }
-                    Err(err) => match err {
-                        OrchestratorError::WordDictError(e) => {
-                            error!("Не удалось перезагрузить словарь: {}", e);
-                        }
-                        _ => error!("Неопознанная ошибка при перезагрузке словаря"),
-                    },
-                }
             }
             if self.metrics_enabled
                 && self.last_metrics_export.elapsed() >= self.metrics_export_interval
@@ -285,38 +277,17 @@ where
             debug!("В delay_buffer отправлено {} сырых семплов", len_rs);
             self.delay_buffer.push(raw_samples);
 
-            // 3. Параллельно — конвертация в i16-моно для распознавания
+            // 3. Параллельно — конвертация в i16-моно и отправка в поток распознавания
+            //    (нарезка на чанки, Vosk и decision engine работают там)
             debug!("На конвертацию отправлено {} сырых семплов", len_rs);
             let converted = convert_to_i16_mono(raw_samples, self.channels);
-            let len_c = converted.len();
-            debug!("Сконвертировано {} семплов", len_c);
+            debug!("Сконвертировано {} семплов", converted.len());
+            self.recognition.send(converted);
 
-            // 4. Нарезка на чанки нужного размера
-            let chunks = self.chunker.push_samples(&converted);
-            let len_chunks = chunks.len();
-            debug!("Создано чанков: {}", len_chunks);
+            // 4. Регистрируем интервалы, которые поток распознавания успел найти
+            self.add_ready_intervals();
 
-            // 5. Каждый готовый чанк — в распознаватель, затем в decision engine
-            for chunk in chunks {
-                let words = self.recognizer.push_chunk(&chunk);
-                match words {
-                    Ok(w) => {
-                        let len_w = w.len();
-                        info!("Получено {} слов", len_w);
-                        self.metrics
-                            .words_recognized
-                            .fetch_add(len_w as u64, Ordering::Relaxed);
-                        self.handle_words(&w);
-                    }
-                    Err(_) => {
-                        self.metrics
-                            .recognizer_errors
-                            .fetch_add(1, Ordering::Relaxed);
-                    }
-                }
-            }
-
-            // 6. Забираем из delay_buffer то, что уже "отлежало" delay_ms
+            // 5. Забираем из delay_buffer то, что уже "отлежало" delay_ms
             let ready = self.delay_buffer.pop_ready();
             let len_r = ready.len();
             debug!("Cемлов готово: {}", len_r);
@@ -325,11 +296,11 @@ where
                 continue;
             }
 
-            // 7. Применяем маску (или passthrough) к готовым сэмплам
+            // 6. Применяем маску (или passthrough) к готовым сэмплам
             debug!("Применение маски...");
             let processed = self.masker.process(&ready);
 
-            // 8. Отдаём обработанные сэмплы в output ring buffer
+            // 7. Отдаём обработанные сэмплы в output ring buffer
             push_output(&mut self.producer, &self.metrics, self.channels, &processed);
         }
     }
@@ -350,29 +321,15 @@ where
 
             let raw_samples = &self.raw_read_buf[..n];
             self.delay_buffer.push(raw_samples);
-
-            let converted = convert_to_i16_mono(raw_samples, self.channels);
-            let chunks = self.chunker.push_samples(&converted);
-
-            for chunk in chunks {
-                match self.recognizer.push_chunk(&chunk) {
-                    Ok(words) => self.handle_words(&words),
-                    Err(_) => (),
-                };
-            }
+            self.recognition
+                .send(convert_to_i16_mono(raw_samples, self.channels));
         }
 
-        // 3. Дожать хвост чанкера — неполный кусок, оставшийся во внутреннем накопителе
-        if let Some(tail_chunk) = self.chunker.finish() {
-            match self.recognizer.push_chunk(&tail_chunk) {
-                Ok(words) => self.handle_words(&words),
-                Err(_) => (),
-            };
+        // 3–4. Закрыть канал распознавания: поток дожимает хвост чанкера и незавершённую
+        //      фразу, после join забираем последние интервалы (finish потребляет поток)
+        for interval in self.recognition.finish() {
+            self.masker.add_interval(&interval);
         }
-
-        // 4. Дожать хвост распознавателя — незавершённая фраза (finish потребляет recognizer)
-        let final_words = self.recognizer.finish();
-        self.handle_words(&final_words);
 
         // 5. Дожать хвост delay_buffer — все сэмплы, включая те, что не отлежали полный delay_ms
         //    (finish потребляет delay_buffer)
@@ -422,25 +379,14 @@ where
     pub fn metrics_handle(&self) -> Arc<Metrics> {
         Arc::clone(&self.metrics)
     }
-    fn handle_words(&mut self, words: &[TimedWord]) {
-        if words.is_empty() {
-            return;
-        }
-
-        debug!("Распознанные слова: \n {:?}", words);
-
-        if let Some(intervals) = self.engine.get_batch_ban_time(words) {
-            self.metrics
-                .words_censored
-                .fetch_add(intervals.len() as u64, Ordering::Relaxed);
-            for interval in intervals {
-                self.masker.add_interval(&interval);
-            }
+    fn add_ready_intervals(&mut self) {
+        for interval in self.recognition.try_recv_intervals() {
+            self.masker.add_interval(&interval);
         }
     }
 }
 
-fn load_banned_words(dict_path: &str) -> Result<BanSet, OrchestratorError> {
+pub(crate) fn load_banned_words(dict_path: &str) -> Result<BanSet, OrchestratorError> {
     match BanSet::new(dict_path) {
         Ok(dict) => {
             info!("Словарь загружен");
