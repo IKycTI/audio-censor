@@ -5,7 +5,7 @@
 /lib
 
 # AI artifacts
-CLAUDE.local.md
+CLAUDE.*
 .claude/
 
 # Files
