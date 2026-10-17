@@ -62,7 +62,7 @@ socket_path = "/tmp/audio-censor.sock"
 # строка: уровень логирования ("error" | "warn" | "info" | "debug" | "trace")
 level = "debug"
 # строка (опционально): путь к файлу лога; если пусто — вывод в stdout
-file_path = "logs.log"
+file_path = "logs/logs.log"
 
 [metrics]
 # булево: включён ли сбор метрик
@@ -70,4 +70,4 @@ enabled = true
 # число: как часто публиковать/логировать метрики
 export_interval_ms = 0
 # строка: файл, в который выгружаются метрики (при остановке и по команде save-metrics); пусто — не выгружать
-metrics_file = "metrics.json"
+metrics_file = "logs/metrics.json"

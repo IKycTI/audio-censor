@@ -3,6 +3,7 @@
 /_*
 /models
 /lib
+/logs
 
 # AI artifacts
 CLAUDE.*
