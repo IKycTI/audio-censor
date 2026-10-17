@@ -1,6 +1,6 @@
 use std::collections::VecDeque;
 
-use crate::ms_to_samples;
+use crate::ms_to_stream_pos;
 
 pub struct DelayBuffer<T> {
     samples: VecDeque<T>,
@@ -10,8 +10,10 @@ pub struct DelayBuffer<T> {
 }
 
 impl<T: Copy> DelayBuffer<T> {
-    pub fn new(delay_ms: u64, sample_rate: u32) -> Self {
-        let delay = ms_to_samples(delay_ms, sample_rate);
+    pub fn new(delay_ms: u64, sample_rate: u32, channels: u16) -> Self {
+        // Сэмплы в буфере чередуются по каналам, поэтому задержка — в позициях потока,
+        // а не в кадрах: иначе в стерео она вдвое меньше заданной
+        let delay = ms_to_stream_pos(delay_ms, sample_rate, channels);
         DelayBuffer {
             samples: VecDeque::<T>::new(),
             next_pos: 0,

@@ -1,10 +1,13 @@
 use cpal::{BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, StreamConfig};
-use ringbuf::{traits::Producer, HeapProd};
+use ringbuf::{
+    HeapProd,
+    traits::{Observer, Producer},
+};
 use rodio::DeviceTrait;
-use std::sync::{atomic::Ordering, Arc};
+use std::sync::{Arc, atomic::Ordering};
 use tracing::{debug, error};
 
-use crate::metrics::Metrics;
+use crate::{metrics::Metrics, whole_frames};
 
 pub fn build_capture_stream<T>(
     device: Device,
@@ -15,10 +18,13 @@ pub fn build_capture_stream<T>(
 where
     T: SizedSample + Send + 'static,
 {
+    let channels = stream_config.channels;
     device.build_input_stream(
         &stream_config,
         move |data: &[T], _: &InputCallbackInfo| {
-            let pushed = producer.push_slice(data);
+            // При переполнении пишем только целые кадры, иначе каналы сдвинутся
+            let fits = whole_frames(producer.vacant_len().min(data.len()), channels);
+            let pushed = producer.push_slice(&data[..fits]);
 
             debug!(
                 "callback: получено {} сэмплов, записано {}",

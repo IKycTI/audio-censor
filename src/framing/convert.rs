@@ -1,4 +1,4 @@
-use dasp::{sample::Duplex, Sample};
+use dasp::{Sample, sample::Duplex};
 
 pub fn convert_to_i16_mono<T>(data: &[T], channels: u16) -> Vec<i16>
 where

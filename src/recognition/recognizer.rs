@@ -1,7 +1,7 @@
 use tracing::{error, info};
 use vosk::{DecodingState, Model, Recognizer, Word};
 
-use crate::{framing::Chunk, recognition::TimedWord, MS_PER_SEC};
+use crate::{MS_PER_SEC, framing::Chunk, recognition::TimedWord};
 
 pub struct SpeechRecognizer {
     recognizer: Recognizer,

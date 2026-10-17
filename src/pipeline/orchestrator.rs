@@ -11,13 +11,12 @@ use cpal::{Sample, SizedSample, Stream, traits::StreamTrait};
 use dasp::sample::Duplex;
 use ringbuf::{
     HeapCons, HeapProd,
-    traits::{Consumer, Producer},
+    traits::{Consumer, Observer, Producer},
 };
 use tracing::{debug, error, info};
 use vosk::Model;
 
 use crate::{
-    MS_PER_SEC,
     buffer::{self, DelayBuffer},
     capture,
     config::{BanSet, Settings},
@@ -25,11 +24,13 @@ use crate::{
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
-    ms_to_samples, ms_to_stream_pos, playback,
+    ms_to_stream_pos, playback,
     recognition::{SpeechRecognizer, TimedWord},
+    whole_frames,
 };
 
-const EXTEND_RAW_BUF: usize = 100;
+// Сколько звука забирать из входного буфера за одну итерацию цикла
+const RAW_READ_BUF_MS: u64 = 100;
 
 pub struct Orchestrator<T>
 where
@@ -101,7 +102,11 @@ where
 
         let engine = DecisionEngine::new(word_dict.words, settings.decision.max_distance);
 
-        let delay_buffer = DelayBuffer::new(settings.buffer.delay_ms, settings.audio.sample_rate);
+        let delay_buffer = DelayBuffer::new(
+            settings.buffer.delay_ms,
+            settings.audio.sample_rate,
+            settings.audio.channels,
+        );
 
         let strategy: Box<dyn Masking<T>> = match settings.masking.strategy {
             MaskingStrategy::Beep => Box::new(Beep::new(
@@ -121,8 +126,11 @@ where
             settings.audio.channels,
         );
 
-        let raw_read_buf_capacity =
-            (settings.audio.sample_rate as f32 / MS_PER_SEC) as usize * EXTEND_RAW_BUF;
+        let raw_read_buf_capacity = ms_to_stream_pos(
+            RAW_READ_BUF_MS,
+            settings.audio.sample_rate,
+            settings.audio.channels,
+        ) as usize;
         info!("Размер буфера сырых сэмплов: {}", raw_read_buf_capacity);
 
         let output_drain_wait =
@@ -322,13 +330,7 @@ where
             let processed = self.masker.process(&ready);
 
             // 8. Отдаём обработанные сэмплы в output ring buffer
-            let pushed = self.producer.push_slice(&processed);
-            debug!("Отдано на выход: {}", pushed);
-            if pushed < processed.len() {
-                self.metrics
-                    .dropped_output_samples
-                    .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
-            }
+            push_output(&mut self.producer, &self.metrics, self.channels, &processed);
         }
     }
 
@@ -377,12 +379,7 @@ where
         let tail_samples = self.delay_buffer.finish();
         if !tail_samples.is_empty() {
             let processed = self.masker.process(&tail_samples);
-            let pushed = self.producer.push_slice(&processed);
-            if pushed < processed.len() {
-                self.metrics
-                    .dropped_output_samples
-                    .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
-            }
+            push_output(&mut self.producer, &self.metrics, self.channels, &processed);
         }
 
         // 6. Дать playback-потоку время доиграть то, что осталось в output ring buffer,
@@ -465,4 +462,19 @@ pub enum OrchestratorError {
     PlaybackStreamError(String),
     ModelLoadError(String),
     RecognizerError(String),
+}
+
+fn push_output<T>(producer: &mut HeapProd<T>, metrics: &Metrics, channels: u16, processed: &[T])
+where
+    T: Copy,
+{
+    // При переполнении пишем только целые кадры, иначе каналы на выходе поменяются местами
+    let fits = whole_frames(producer.vacant_len().min(processed.len()), channels);
+    let pushed = producer.push_slice(&processed[..fits]);
+    debug!("Отдано на выход: {}", pushed);
+    if pushed < processed.len() {
+        metrics
+            .dropped_output_samples
+            .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
+    }
 }

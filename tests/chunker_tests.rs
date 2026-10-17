@@ -34,8 +34,8 @@ fn assert_chunks_eq(a: &[Chunk], b: &[Chunk]) {
 }
 
 fn expected_sizes(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> (usize, usize, usize) {
-    let chunk_size = ((chunk_size_ms * sample_rate as u64) as f64 / 1000.0).round() as usize;
-    let overlap = ((overlap_ms * sample_rate as u64) as f64 / 1000.0).round() as usize;
+    let chunk_size = (chunk_size_ms * sample_rate as u64 / 1000) as usize;
+    let overlap = (overlap_ms * sample_rate as u64 / 1000) as usize;
     let step = chunk_size - overlap;
     (chunk_size, overlap, step)
 }

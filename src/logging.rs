@@ -3,7 +3,7 @@ use std::fs::{self, File};
 use std::path::Path;
 use std::sync::Once;
 use tracing::info;
-use tracing_subscriber::{fmt, EnvFilter};
+use tracing_subscriber::{EnvFilter, fmt};
 
 static LOGGER_INIT: Once = Once::new();
 

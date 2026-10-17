@@ -1,6 +1,6 @@
 use tracing::info;
 
-use crate::ms_to_samples;
+use crate::ms_to_frames;
 
 pub struct Chunker {
     chunk_size_sample: u64,
@@ -16,14 +16,15 @@ pub struct Chunk {
 
 impl Chunker {
     pub fn new(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> Self {
-        let chunk_size_sample = ms_to_samples(chunk_size_ms, sample_rate);
-        let overlap_size_samples = ms_to_samples(overlap_ms, sample_rate);
+        // Чанкер получает моно-поток, поэтому кадр = сэмпл
+        let chunk_size_sample = ms_to_frames(chunk_size_ms, sample_rate);
+        let overlap_size_samples = ms_to_frames(overlap_ms, sample_rate);
 
         let step_samples = chunk_size_sample - overlap_size_samples;
 
         info!("Размер чанка: {}", chunk_size_sample);
-        info!("Размер перекрытия чанка: {}", chunk_size_sample);
-        info!("Шаг: {}", chunk_size_sample);
+        info!("Размер перекрытия чанка: {}", overlap_size_samples);
+        info!("Шаг: {}", step_samples);
 
         Chunker {
             chunk_size_sample,

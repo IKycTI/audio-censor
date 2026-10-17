@@ -1,6 +1,6 @@
 use cpal::{
-    traits::{DeviceTrait, HostTrait},
     Device,
+    traits::{DeviceTrait, HostTrait},
 };
 use cpal::{StreamConfig, SupportedStreamConfig};
 

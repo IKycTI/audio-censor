@@ -1,19 +1,20 @@
 use audio_censor::buffer::DelayBuffer;
 
-/// Сэмпл-рейт 1000 Гц → 1 мс = 10 сэмплов.
+/// Сэмпл-рейт 1000 Гц, моно → 1 мс = 1 позиция.
 const SAMPLE_RATE: u32 = 1000;
+const MONO: u16 = 1;
 
 // ── Базовое поведение ──────────────────────────────────────────────
 
 #[test]
 fn new_buffer_is_empty() {
-    let mut buf: DelayBuffer<i16> = DelayBuffer::new(10, SAMPLE_RATE);
+    let mut buf: DelayBuffer<i16> = DelayBuffer::new(10, SAMPLE_RATE, MONO);
     assert!(buf.pop_ready().is_empty());
 }
 
 #[test]
 fn push_then_pop_ready_returns_samples() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE); // задержка 0 → сразу
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO); // задержка 0 → сразу
     buf.push(&[100, 200, 300]);
     let ready = buf.pop_ready();
     assert_eq!(ready.len(), 3);
@@ -22,7 +23,7 @@ fn push_then_pop_ready_returns_samples() {
 
 #[test]
 fn pop_ready_returns_empty_when_all_delayed() {
-    let mut buf = DelayBuffer::new(100, SAMPLE_RATE); // 100 мс = 100 сэмплов задержки
+    let mut buf = DelayBuffer::new(100, SAMPLE_RATE, MONO); // 100 мс = 100 сэмплов задержки
     buf.push(&[1, 2, 3]);
     assert!(buf.pop_ready().is_empty());
 }
@@ -30,7 +31,7 @@ fn pop_ready_returns_empty_when_all_delayed() {
 #[test]
 fn pop_ready_returns_partial_when_some_samples_ready() {
     // Задержка = 5 мс = 5 сэмплов. Подаём 8 — должны получить первые 3.
-    let mut buf = DelayBuffer::new(5, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(5, SAMPLE_RATE, MONO);
     buf.push(&[10, 20, 30, 40, 50, 60, 70, 80]);
     let ready = buf.pop_ready();
     assert_eq!(ready.len(), 3);
@@ -41,7 +42,7 @@ fn pop_ready_returns_partial_when_some_samples_ready() {
 
 #[test]
 fn positions_are_monotonic_across_pop_ready_calls() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[1, 2, 3]);
     buf.push(&[4, 5]);
 
@@ -53,7 +54,7 @@ fn positions_are_monotonic_across_pop_ready_calls() {
 
 #[test]
 fn positions_are_correct_with_nonzero_delay() {
-    let mut buf = DelayBuffer::new(2, SAMPLE_RATE); // 2 сэмпла задержки
+    let mut buf = DelayBuffer::new(2, SAMPLE_RATE, MONO); // 2 сэмпла задержки
     buf.push(&[10, 20, 30, 40, 50]);
 
     // 5 сэмплов в буфере, задержка 2 → ready = 5 - 2 = 3
@@ -67,7 +68,7 @@ fn positions_are_correct_with_nonzero_delay() {
 
 #[test]
 fn multiple_push_pop_cycles_work_correctly() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
 
     buf.push(&[1, 2]);
     assert_eq!(buf.pop_ready(), vec![(0, 1), (1, 2)]);
@@ -85,7 +86,7 @@ fn multiple_push_pop_cycles_work_correctly() {
 
 #[test]
 fn pop_ready_drains_only_ready_samples_leaving_rest_in_buffer() {
-    let mut buf = DelayBuffer::new(3, SAMPLE_RATE); // 3 сэмпла задержки
+    let mut buf = DelayBuffer::new(3, SAMPLE_RATE, MONO); // 3 сэмпла задержки
     buf.push(&[1, 2, 3, 4, 5, 6]);
 
     // 6 сэмплов в буфере, задержка 3 → ready = 6 - 3 = 3
@@ -108,7 +109,7 @@ fn pop_ready_drains_only_ready_samples_leaving_rest_in_buffer() {
 
 #[test]
 fn finish_drains_all_remaining_samples() {
-    let mut buf = DelayBuffer::new(5, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(5, SAMPLE_RATE, MONO);
     buf.push(&[100, 200, 300]);
     // Задержка 5 > 3 сэмпла → pop_ready ничего не отдаст
     assert!(buf.pop_ready().is_empty());
@@ -120,13 +121,13 @@ fn finish_drains_all_remaining_samples() {
 
 #[test]
 fn finish_on_empty_buffer_returns_empty_vec() {
-    let buf: DelayBuffer<i16> = DelayBuffer::new(10, SAMPLE_RATE);
+    let buf: DelayBuffer<i16> = DelayBuffer::new(10, SAMPLE_RATE, MONO);
     assert!(buf.finish().is_empty());
 }
 
 #[test]
 fn finish_after_partial_pop() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[1, 2, 3, 4, 5]);
 
     // Задержка 0 → все сэмплы готовы сразу
@@ -143,7 +144,7 @@ fn finish_after_partial_pop() {
 
 #[test]
 fn delay_buffer_works_with_f32() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[0.5, -0.5, 1.0]);
     let ready = buf.pop_ready();
     assert_eq!(ready.len(), 3);
@@ -154,7 +155,7 @@ fn delay_buffer_works_with_f32() {
 
 #[test]
 fn delay_buffer_works_with_u8() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[0u8, 128, 255]);
     let ready = buf.pop_ready();
     assert_eq!(ready, vec![(0, 0u8), (1, 128), (2, 255)]);
@@ -164,14 +165,14 @@ fn delay_buffer_works_with_u8() {
 
 #[test]
 fn zero_delay_means_immediate_read() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[42]);
     assert_eq!(buf.pop_ready(), vec![(0, 42)]);
 }
 
 #[test]
 fn large_delay_blocks_all_samples() {
-    let mut buf = DelayBuffer::new(60_000, SAMPLE_RATE); // 60 секунд задержки
+    let mut buf = DelayBuffer::new(60_000, SAMPLE_RATE, MONO); // 60 секунд задержки
     buf.push(&[1, 2, 3]);
     assert!(buf.pop_ready().is_empty());
     let drained = buf.finish();
@@ -180,14 +181,14 @@ fn large_delay_blocks_all_samples() {
 
 #[test]
 fn empty_push_does_not_crash() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[] as &[i16]);
     assert!(buf.pop_ready().is_empty());
 }
 
 #[test]
 fn single_sample_push_pop_finish_chain() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[999]);
     assert_eq!(buf.pop_ready(), vec![(0, 999)]);
     assert!(buf.finish().is_empty());
@@ -197,7 +198,7 @@ fn single_sample_push_pop_finish_chain() {
 fn saturating_sub_prevents_underflow_in_pop_ready() {
     // Если delay больше количества сэмплов, saturating_sub должен
     // вернуть 0, а не вызвать panic при переполнении.
-    let mut buf = DelayBuffer::new(1000, SAMPLE_RATE); // 1000 сэмплов задержки
+    let mut buf = DelayBuffer::new(1000, SAMPLE_RATE, MONO); // 1000 сэмплов задержки
     buf.push(&[1]);
     // Не должно паниковать
     assert!(buf.pop_ready().is_empty());
@@ -205,7 +206,7 @@ fn saturating_sub_prevents_underflow_in_pop_ready() {
 
 #[test]
 fn positions_continue_correctly_after_finish() {
-    let mut buf = DelayBuffer::new(0, SAMPLE_RATE);
+    let mut buf = DelayBuffer::new(0, SAMPLE_RATE, MONO);
     buf.push(&[1, 2, 3]);
     let first = buf.pop_ready();
     assert_eq!(first, vec![(0, 1), (1, 2), (2, 3)]);
@@ -213,4 +214,33 @@ fn positions_continue_correctly_after_finish() {
     buf.push(&[4, 5]);
     let second = buf.finish();
     assert_eq!(second, vec![(3, 4), (4, 5)]);
+}
+
+// ── Стерео: задержка в позициях потока ─────────────────────────────
+
+const STEREO: u16 = 2;
+
+#[test]
+fn stereo_delay_counts_interleaved_samples() {
+    // 5 мс стерео при 1000 Гц = 5 кадров = 10 позиций задержки
+    let mut buf = DelayBuffer::new(5, SAMPLE_RATE, STEREO);
+    buf.push(&(0..10).collect::<Vec<i16>>());
+    assert!(buf.pop_ready().is_empty(), "10 позиций — ещё в задержке");
+
+    buf.push(&[10, 11]);
+    assert_eq!(buf.pop_ready(), vec![(0, 0), (1, 1)]);
+}
+
+#[test]
+fn stereo_delay_matches_configured_time() {
+    // 3000 мс стерео 44100 Гц: ровно 3 с звука остаются в буфере
+    let mut buf = DelayBuffer::new(3000, 44100, STEREO);
+    let one_second = vec![0i16; 44100 * 2];
+
+    for _ in 0..3 {
+        buf.push(&one_second);
+        assert!(buf.pop_ready().is_empty());
+    }
+    buf.push(&one_second);
+    assert_eq!(buf.pop_ready().len(), one_second.len());
 }
