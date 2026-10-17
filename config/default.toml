@@ -6,15 +6,15 @@ output_device = "PipeWire Sound Server"
 # число: частота дискретизации, Гц (напр. 16000, 44100, 48000)
 sample_rate = 44100
 # число: количество каналов (1 = моно, 2 = стерео)
-channels = 1
+channels = 2
 # строка: формат сэмпла (`I8`, `I16`, `I32`, `I64`, `U8`, `U16`, `U32`, `U64`, `F32`, `F64` — по возможностям устройства)
-sample_format = "I32"
+sample_format = "F32"
 
 [buffer]
 # число: ёмкость кольцевого буфера в миллисекундах
-ring_capacity_ms = 1024
+ring_capacity_ms = 10000
 # число: длительность буфера отложенного аудио (компромисс латентность/точность)
-delay_ms = 1024
+delay_ms = 5000
 
 [decision]
 # строка: путь к словарю запрещённых слов (json)
@@ -24,9 +24,9 @@ max_distance = 1
 
 [framing]
 # число: длительность одного чанка для распознавателя, мс
-chunk_size_ms = 10
+chunk_size_ms = 10000
 # число: перекрытие соседних чанков, мс (0 = без перекрытия)
-overlap_ms = 5
+overlap_ms = 0
 
 [recognition]
 # строка: путь к каталогу с моделью распознавания
@@ -60,7 +60,7 @@ socket_path = "/tmp/audio-censor.sock"
 
 [logging]
 # строка: уровень логирования ("error" | "warn" | "info" | "debug" | "trace")
-level = "info"
+level = "debug"
 # строка (опционально): путь к файлу лога; если пусто — вывод в stdout
 file_path = "logs.log"
 
@@ -69,3 +69,5 @@ file_path = "logs.log"
 enabled = true
 # число: как часто публиковать/логировать метрики
 export_interval_ms = 0
+# строка: файл, в который выгружаются метрики (при остановке и по команде save-metrics); пусто — не выгружать
+metrics_file = "metrics.json"
