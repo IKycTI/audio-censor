@@ -1,9 +1,11 @@
-use cpal::{BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, StreamConfig};
+use cpal::{
+    BuildStreamError, Device, InputCallbackInfo, SizedSample, Stream, StreamConfig,
+    traits::DeviceTrait,
+};
 use ringbuf::{
     HeapProd,
     traits::{Observer, Producer},
 };
-use rodio::DeviceTrait;
 use std::sync::{Arc, atomic::Ordering};
 use tracing::error;
 
