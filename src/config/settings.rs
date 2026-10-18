@@ -122,8 +122,8 @@ pub struct FramingSettings {
 #[derive(Deserialize)]
 pub struct RecognitionSettings {
     pub model_path: String,
-    // Пока не реализовано (ERROR.md, шаг 5.5): частичные гипотезы на DecodingState::Running
-    // pub partial_results: bool,
+    // Частичные гипотезы со словами и таймстемпами: слово ловится, пока фраза ещё идёт
+    pub partial_results: bool,
     pub min_confidence: f32,
 }
 

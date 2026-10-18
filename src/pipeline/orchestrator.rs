@@ -21,7 +21,7 @@ use crate::{
     buffer::{self, DelayBuffer},
     capture,
     config::{BanSet, Settings},
-    decision::{DecisionEngine, IntervalBanTime},
+    decision::{DecisionEngine, DetectedInterval},
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
@@ -126,7 +126,12 @@ where
 
         let chunker = Chunker::new(settings.framing.chunk_size_ms, settings.audio.sample_rate);
 
-        let recognizer = match SpeechRecognizer::new(&model, settings.audio.sample_rate, 0) {
+        let recognizer = match SpeechRecognizer::new(
+            &model,
+            settings.audio.sample_rate,
+            0,
+            settings.recognition.partial_results,
+        ) {
             Ok(r) => r,
             Err(err) => {
                 return Err(OrchestratorError::RecognizerError(err));
@@ -276,6 +281,8 @@ where
                     words_censored = snap.words_censored,
                     recognizer_errors = snap.recognizer_errors,
                     late_intervals = snap.late_intervals,
+                    partial_intervals = snap.partial_intervals,
+                    unconfirmed_partial = snap.unconfirmed_partial_intervals,
                     latency_avg_ms = snap.recognition_latency_avg_ms,
                     latency_max_ms = snap.recognition_latency_max_ms,
                     drift_dropped = snap.drift_dropped_frames,
@@ -563,12 +570,19 @@ where
 fn register_intervals<T>(
     masker: &mut Masker<T>,
     metrics: &Metrics,
-    intervals: Vec<IntervalBanTime>,
+    intervals: Vec<DetectedInterval>,
     input_ms: Option<u64>,
 ) where
     T: Copy + Sample + Duplex<f32>,
 {
-    for interval in intervals {
+    for DetectedInterval { interval, is_new } in intervals {
+        // Уточнение уже найденного слова (границы стали шире): только расширяем маску,
+        // метрики и предупреждения уже учтены при первой находке
+        if !is_new {
+            masker.add_interval(&interval);
+            continue;
+        }
+
         let latency_ms = input_ms.map(|now| now.saturating_sub(interval.end_time));
         if let Some(latency) = latency_ms {
             metrics.record_recognition_latency(latency);

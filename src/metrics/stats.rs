@@ -10,7 +10,9 @@ pub struct Metrics {
     pub words_censored: AtomicU64,   // сколько слов реально попало под цензуру
     pub recognizer_errors: AtomicU64, // сбои accept_waveform/result
     pub late_intervals: AtomicU64,   // опаздывающие интервалы
-    pub drift_dropped_frames: AtomicU64, // дрейф часов: выброшено кадров на выходе
+    pub partial_intervals: AtomicU64, // из них найдено по частичной гипотезе, до конца фразы
+    pub unconfirmed_partial_intervals: AtomicU64, // частичная находка, которой нет в финале — ложное срабатывание
+    pub drift_dropped_frames: AtomicU64,          // дрейф часов: выброшено кадров на выходе
     pub drift_inserted_frames: AtomicU64, // дрейф часов и срывы: добавлено кадров (дубли и тишина)
     // Задержка распознавания запрещённых слов: от конца слова до регистрации интервала, мс потока
     recognition_latency_count: AtomicU64,
@@ -40,6 +42,10 @@ impl Metrics {
             words_censored: self.words_censored.load(Ordering::Relaxed),
             recognizer_errors: self.recognizer_errors.load(Ordering::Relaxed),
             late_intervals: self.late_intervals.load(Ordering::Relaxed),
+            partial_intervals: self.partial_intervals.load(Ordering::Relaxed),
+            unconfirmed_partial_intervals: self
+                .unconfirmed_partial_intervals
+                .load(Ordering::Relaxed),
             drift_dropped_frames: self.drift_dropped_frames.load(Ordering::Relaxed),
             drift_inserted_frames: self.drift_inserted_frames.load(Ordering::Relaxed),
             recognition_latency_samples: latency_count,
@@ -70,6 +76,8 @@ pub struct MetricsSnapshot {
     pub words_censored: u64,
     pub recognizer_errors: u64,
     pub late_intervals: u64,
+    pub partial_intervals: u64,
+    pub unconfirmed_partial_intervals: u64,
     pub drift_dropped_frames: u64,
     pub drift_inserted_frames: u64,
     pub recognition_latency_samples: u64,

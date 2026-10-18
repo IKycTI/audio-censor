@@ -12,11 +12,11 @@ use tracing::{debug, error, info};
 use vosk::Model;
 
 use crate::{
-    decision::{DecisionEngine, IntervalBanTime},
+    decision::{DecisionEngine, DetectedInterval, PhraseTracker},
     framing::{Chunk, Chunker},
     metrics::Metrics,
     pipeline::orchestrator::{OrchestratorError, load_banned_words},
-    recognition::{SpeechRecognizer, TimedWord},
+    recognition::{Recognition, SpeechRecognizer, TimedWord},
 };
 
 // Как часто поток проверяет флаг перезагрузки словаря, если звук не приходит (пауза)
@@ -27,7 +27,7 @@ const DICT_POLL_INTERVAL: Duration = Duration::from_millis(100);
 /// чтобы декодирование Vosk не блокировало цикл, выдающий звук
 pub struct RecognitionWorker {
     samples_tx: Option<Sender<Vec<i16>>>,
-    intervals_rx: Receiver<Vec<IntervalBanTime>>,
+    intervals_rx: Receiver<Vec<DetectedInterval>>,
     handle: Option<JoinHandle<()>>,
     disconnected: bool,
 }
@@ -41,7 +41,8 @@ struct WorkerState {
     dict_path: String,
     dict_reload_req: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
-    intervals_tx: Sender<Vec<IntervalBanTime>>,
+    intervals_tx: Sender<Vec<DetectedInterval>>,
+    phrase: PhraseTracker,
 }
 
 impl RecognitionWorker {
@@ -55,7 +56,7 @@ impl RecognitionWorker {
         metrics: Arc<Metrics>,
     ) -> Result<Self, OrchestratorError> {
         let (samples_tx, samples_rx) = mpsc::channel::<Vec<i16>>();
-        let (intervals_tx, intervals_rx) = mpsc::channel::<Vec<IntervalBanTime>>();
+        let (intervals_tx, intervals_rx) = mpsc::channel::<Vec<DetectedInterval>>();
 
         let state = WorkerState {
             _model: model,
@@ -66,6 +67,7 @@ impl RecognitionWorker {
             dict_reload_req,
             metrics,
             intervals_tx,
+            phrase: PhraseTracker::new(),
         };
 
         let handle = thread::Builder::new()
@@ -96,12 +98,12 @@ impl RecognitionWorker {
     }
 
     /// Забрать все интервалы, готовые на данный момент. Не блокирует
-    pub fn try_recv_intervals(&self) -> Vec<IntervalBanTime> {
+    pub fn try_recv_intervals(&self) -> Vec<DetectedInterval> {
         self.intervals_rx.try_iter().flatten().collect()
     }
 
     /// Закрыть канал, дождаться, пока поток дораспознает хвост, и забрать последние интервалы
-    pub fn finish(mut self) -> Vec<IntervalBanTime> {
+    pub fn finish(mut self) -> Vec<DetectedInterval> {
         // Закрытие канала — сигнал потоку доделать chunker.finish() и recognizer.finish()
         drop(self.samples_tx.take());
 
@@ -136,7 +138,7 @@ impl WorkerState {
             self.push_chunk(&tail_chunk);
         }
         match self.recognizer.finish() {
-            Ok(final_words) => self.handle_words(&final_words),
+            Ok(final_words) => self.handle_final(&final_words),
             Err(e) => {
                 error!("Не удалось получить последнюю фразу: {}", e);
                 self.metrics
@@ -150,7 +152,8 @@ impl WorkerState {
 
     fn push_chunk(&mut self, chunk: &Chunk) {
         match self.recognizer.push_chunk(chunk) {
-            Ok(words) => self.handle_words(&words),
+            Ok(Recognition::Partial(words)) => self.handle_partial(&words),
+            Ok(Recognition::Final(words)) => self.handle_final(&words),
             Err(e) => {
                 error!("Ошибка распознавания: {}", e);
                 self.metrics
@@ -160,24 +163,57 @@ impl WorkerState {
         }
     }
 
-    fn handle_words(&mut self, words: &[TimedWord]) {
-        if words.is_empty() {
+    /// Фраза ещё идёт: запрещённое слово из гипотезы маскируем сразу, не дожидаясь паузы.
+    /// Слова гипотезы не считаются в words_recognized — она повторяется на каждый чанк
+    fn handle_partial(&mut self, words: &[TimedWord]) {
+        let Some(intervals) = self.engine.get_batch_ban_time(words) else {
+            return;
+        };
+        let detected = self.phrase.on_partial(intervals);
+        let new = detected.iter().filter(|d| d.is_new).count() as u64;
+        if new > 0 {
+            debug!("Запрещённых слов в частичной гипотезе: {}", new);
+            self.metrics
+                .partial_intervals
+                .fetch_add(new, Ordering::Relaxed);
+        }
+        self.send(detected);
+    }
+
+    /// Фраза завершена: окончательные слова, подтверждение находок из частичных гипотез
+    fn handle_final(&mut self, words: &[TimedWord]) {
+        if !words.is_empty() {
+            // Распознанный текст — это речь пользователя, поэтому только на уровне debug
+            debug!("Получено {} слов: {:?}", words.len(), words);
+            self.metrics
+                .words_recognized
+                .fetch_add(words.len() as u64, Ordering::Relaxed);
+        }
+
+        let intervals = self.engine.get_batch_ban_time(words).unwrap_or_default();
+        let outcome = self.phrase.on_final(intervals);
+        if outcome.unconfirmed > 0 {
+            debug!(
+                "Не подтвердилось финальным результатом: {}",
+                outcome.unconfirmed
+            );
+            self.metrics
+                .unconfirmed_partial_intervals
+                .fetch_add(outcome.unconfirmed as u64, Ordering::Relaxed);
+        }
+        self.send(outcome.detected);
+    }
+
+    fn send(&mut self, detected: Vec<DetectedInterval>) {
+        if detected.is_empty() {
             return;
         }
-
-        // Распознанный текст — это речь пользователя, поэтому только на уровне debug
-        debug!("Получено {} слов: {:?}", words.len(), words);
+        let new = detected.iter().filter(|d| d.is_new).count() as u64;
         self.metrics
-            .words_recognized
-            .fetch_add(words.len() as u64, Ordering::Relaxed);
-
-        if let Some(intervals) = self.engine.get_batch_ban_time(words) {
-            self.metrics
-                .words_censored
-                .fetch_add(intervals.len() as u64, Ordering::Relaxed);
-            // Оркестратор уже завершился — интервалы некому применять
-            let _ = self.intervals_tx.send(intervals);
-        }
+            .words_censored
+            .fetch_add(new, Ordering::Relaxed);
+        // Оркестратор уже завершился — интервалы некому применять
+        let _ = self.intervals_tx.send(detected);
     }
 
     fn reload_dict_if_requested(&mut self) {

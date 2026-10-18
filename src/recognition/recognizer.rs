@@ -1,6 +1,7 @@
 use std::fmt;
+use std::panic::{self, AssertUnwindSafe};
 
-use tracing::trace;
+use tracing::{error, trace};
 use vosk::{DecodingState, Model, Recognizer, Word};
 
 use crate::{MS_PER_SEC, framing::Chunk, recognition::TimedWord};
@@ -9,23 +10,43 @@ pub struct SpeechRecognizer {
     recognizer: Recognizer,
     _sample_rate: u32,
     stream_offset_ms: u64,
+    partial_words: bool,
+}
+
+/// Результат очередного чанка
+#[derive(Debug)]
+pub enum Recognition {
+    /// Фраза продолжается: текущая гипотеза (пустая, если частичные гипотезы выключены).
+    /// Может измениться с новыми чанками
+    Partial(Vec<TimedWord>),
+    /// Фраза завершена: окончательные слова
+    Final(Vec<TimedWord>),
 }
 
 impl SpeechRecognizer {
-    pub fn new(model: &Model, sample_rate: u32, stream_offset_ms: u64) -> Result<Self, String> {
+    /// `partial_words` — отдавать слова с таймстемпами ещё до конца фразы
+    /// (Vosk иначе выдаёт слова только после паузы, через секунды после их звучания)
+    pub fn new(
+        model: &Model,
+        sample_rate: u32,
+        stream_offset_ms: u64,
+        partial_words: bool,
+    ) -> Result<Self, String> {
         if let Some(mut recognizer) = Recognizer::new(model, sample_rate as f32) {
             recognizer.set_words(true);
+            recognizer.set_partial_words(partial_words);
             Ok(SpeechRecognizer {
                 recognizer,
                 _sample_rate: sample_rate,
                 stream_offset_ms,
+                partial_words,
             })
         } else {
             Err("Не удалось создать распознаватель".to_string())
         }
     }
 
-    pub fn push_chunk(&mut self, chunk: &Chunk) -> Result<Vec<TimedWord>, RecognizerError> {
+    pub fn push_chunk(&mut self, chunk: &Chunk) -> Result<Recognition, RecognizerError> {
         let accept_res = self.recognizer.accept_waveform(&chunk.data);
 
         match accept_res {
@@ -40,19 +61,42 @@ impl SpeechRecognizer {
                         .single()
                         .ok_or(RecognizerError::UnexpectedResult)?;
 
-                    Ok(convert_word_to_timed_word(
+                    Ok(Recognition::Final(convert_word_to_timed_word(
                         self.stream_offset_ms,
                         words.result,
-                    ))
+                    )))
                 }
                 DecodingState::Running => {
                     trace!("Чанк добавлен, фраза продолжается");
-                    Ok(Vec::new())
+                    self.partial()
                 }
                 // Ошибку логирует вызывающий (поток распознавания) — через Display
                 DecodingState::Failed => Err(RecognizerError::DecodingFailed),
             },
             Err(err) => Err(RecognizerError::AcceptError(err.to_string())),
+        }
+    }
+
+    fn partial(&mut self) -> Result<Recognition, RecognizerError> {
+        if !self.partial_words {
+            return Ok(Recognition::Partial(Vec::new()));
+        }
+        // Крейт vosk паникует, если JSON не совпал с его структурой (например, старая
+        // libvosk без conf у частичных слов). Падение потока распознавания отключило бы
+        // цензуру совсем — вместо этого выключаем только частичные гипотезы
+        let offset = self.stream_offset_ms;
+        let recognizer = &mut self.recognizer;
+        let words = panic::catch_unwind(AssertUnwindSafe(|| {
+            convert_word_to_timed_word(offset, recognizer.partial_result().partial_result)
+        }));
+        match words {
+            Ok(words) => Ok(Recognition::Partial(words)),
+            Err(_) => {
+                error!("Частичные гипотезы Vosk не разбираются — отключены, работаем по фразам");
+                self.partial_words = false;
+                self.recognizer.set_partial_words(false);
+                Err(RecognizerError::PartialResultUnavailable)
+            }
         }
     }
 
@@ -86,6 +130,7 @@ pub enum RecognizerError {
     DecodingFailed,
     AcceptError(String),
     UnexpectedResult,
+    PartialResultUnavailable,
 }
 
 impl fmt::Display for RecognizerError {
@@ -98,6 +143,9 @@ impl fmt::Display for RecognizerError {
                     f,
                     "Vosk вернул результат с альтернативами вместо одиночного"
                 )
+            }
+            RecognizerError::PartialResultUnavailable => {
+                write!(f, "частичная гипотеза Vosk в неожиданном формате")
             }
         }
     }
