@@ -52,11 +52,8 @@ fn main() -> ExitCode {
         }
     };
 
-    if let Err(err) = init_logger(&settings.logging) {
-        eprintln!("Ошибка инициализации логгера: {}", err);
-        return ExitCode::FAILURE;
-    }
-    // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон
+    // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон.
+    //    Логгер ему не нужен (хватает stderr): иначе File::create очищал бы лог работающего демона
     if let Some(cmd) = cli.command {
         return match settings.control.resolved_socket_path() {
             Ok(path) => run_control_client(&path, cmd),
@@ -65,6 +62,11 @@ fn main() -> ExitCode {
                 ExitCode::FAILURE
             }
         };
+    }
+
+    if let Err(err) = init_logger(&settings.logging) {
+        eprintln!("Ошибка инициализации логгера: {}", err);
+        return ExitCode::FAILURE;
     }
 
     if let Err(err) = settings.check() {
