@@ -163,14 +163,16 @@ impl ControlSettings {
 #[derive(Deserialize)]
 pub struct LoggingSettings {
     pub level: String,
-    pub file_path: String,
+    // Каталог логов: файл на сеанс `<время запуска>.log`; пусто — вывод в stdout
+    pub dir: String,
 }
 
 #[derive(Deserialize)]
 pub struct MetricsSettings {
     pub enabled: bool,
     pub export_interval_ms: u64,
-    pub metrics_file: String,
+    // Каталог метрик: `<время запуска>.metrics.json` и сводка sessions.jsonl; пусто — не сохранять
+    pub dir: String,
 }
 
 #[derive(serde::Deserialize)]

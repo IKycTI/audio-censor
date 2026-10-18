@@ -10,6 +10,7 @@ pub mod metrics;
 pub mod pipeline;
 pub mod playback;
 pub mod recognition;
+pub mod session;
 
 pub const MS_PER_SEC: f32 = 1000.0;
 

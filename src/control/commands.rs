@@ -6,7 +6,7 @@ pub enum ControlCommand {
     Status,
     /// Перечитать словарь запрещённых слов без перезапуска
     ReloadDict,
-    /// Выгрузить текущие метрики в файл (metrics.metrics_file)
+    /// Выгрузить текущие метрики в файл сеанса (metrics.dir)
     SaveMetrics,
     /// Корректно остановить демон
     Shutdown,

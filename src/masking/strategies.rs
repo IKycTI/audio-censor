@@ -2,7 +2,7 @@ use dasp::{Sample, sample::Duplex};
 use serde::Deserialize;
 use std::f32::consts::PI;
 
-#[derive(Deserialize)]
+#[derive(Debug, Clone, Copy, Deserialize)]
 pub enum MaskingStrategy {
     Beep,
     Silence,

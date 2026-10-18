@@ -37,7 +37,7 @@ fn handle(running: Arc<AtomicBool>) -> ControlHandle {
         running,
         Arc::new(Metrics::default()),
         Arc::new(AtomicBool::new(false)),
-        String::new(),
+        None,
     )
 }
 

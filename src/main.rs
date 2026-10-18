@@ -1,7 +1,9 @@
 use audio_censor::config::Settings;
 use audio_censor::control::{ControlCommand, ControlHandle, ControlSocket};
 use audio_censor::logging::{init_logger, logs_to_file};
+use audio_censor::metrics::{MetricsReporter, ReportConfig};
 use audio_censor::pipeline::Orchestrator;
+use audio_censor::session::Session;
 use audio_censor::{capture, playback};
 
 use clap::{Parser, ValueEnum};
@@ -53,7 +55,7 @@ fn main() -> ExitCode {
     };
 
     // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон.
-    //    Логгер ему не нужен (хватает stderr): иначе File::create очищал бы лог работающего демона
+    //    Логгер ему не нужен (хватает stderr) и не должен создавать файлы сеанса
     if let Some(cmd) = cli.command {
         return match settings.control.resolved_socket_path() {
             Ok(path) => run_control_client(&path, cmd),
@@ -64,10 +66,13 @@ fn main() -> ExitCode {
         };
     }
 
-    if let Err(err) = init_logger(&settings.logging) {
+    // Время запуска — общее имя файлов лога и метрик этого сеанса
+    let session = Session::start();
+    if let Err(err) = init_logger(&settings.logging, &session) {
         eprintln!("Ошибка инициализации логгера: {}", err);
         return ExitCode::FAILURE;
     }
+    info!("Сеанс {}", session.id);
 
     if let Err(err) = settings.check() {
         return fatal(format!("Ошибка конфигурации: {}", err));
@@ -75,21 +80,21 @@ fn main() -> ExitCode {
 
     // 3. Если аргументы вообще не переданы — запускаем демона
     match settings.audio.sample_format {
-        cpal::SampleFormat::I8 => start::<i8>(settings),
-        cpal::SampleFormat::I16 => start::<i16>(settings),
-        cpal::SampleFormat::I32 => start::<i32>(settings),
-        cpal::SampleFormat::I64 => start::<i64>(settings),
-        cpal::SampleFormat::U8 => start::<u8>(settings),
-        cpal::SampleFormat::U16 => start::<u16>(settings),
-        cpal::SampleFormat::U32 => start::<u32>(settings),
-        cpal::SampleFormat::U64 => start::<u64>(settings),
-        cpal::SampleFormat::F32 => start::<f32>(settings),
-        cpal::SampleFormat::F64 => start::<f64>(settings),
+        cpal::SampleFormat::I8 => start::<i8>(settings, session),
+        cpal::SampleFormat::I16 => start::<i16>(settings, session),
+        cpal::SampleFormat::I32 => start::<i32>(settings, session),
+        cpal::SampleFormat::I64 => start::<i64>(settings, session),
+        cpal::SampleFormat::U8 => start::<u8>(settings, session),
+        cpal::SampleFormat::U16 => start::<u16>(settings, session),
+        cpal::SampleFormat::U32 => start::<u32>(settings, session),
+        cpal::SampleFormat::U64 => start::<u64>(settings, session),
+        cpal::SampleFormat::F32 => start::<f32>(settings, session),
+        cpal::SampleFormat::F64 => start::<f64>(settings, session),
         other => fatal(format!("Неподдерживаемый формат сэмпла: {other}")),
     }
 }
 
-fn start<T>(settings: Settings) -> ExitCode
+fn start<T>(settings: Settings, session: Session) -> ExitCode
 where
     T: Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
 {
@@ -110,7 +115,13 @@ where
         None
     };
 
-    let metrics_file = settings.metrics.metrics_file.clone();
+    let reporter = (settings.metrics.enabled && !settings.metrics.dir.is_empty()).then(|| {
+        MetricsReporter::new(
+            &settings.metrics.dir,
+            session,
+            ReportConfig::from_settings(&settings),
+        )
+    });
     let mut orchestrator = match Orchestrator::<T>::new(settings) {
         Ok(o) => o,
         Err(err) => return fatal(err),
@@ -134,8 +145,9 @@ where
         orchestrator.running_handle(),
         orchestrator.metrics_handle(),
         orchestrator.dict_reload_handle(),
-        metrics_file,
+        reporter.clone(),
     );
+    let metrics = orchestrator.metrics_handle();
 
     let socket_file = control_socket.map(|socket| socket.serve(control_handle));
     info!("audio-censor успешно запущен, для остановки нажмите Ctrl+C");
@@ -145,6 +157,18 @@ where
     orchestrator.shutdown();
     // Удаляем файл сокета, чтобы следующий запуск не принял его за живой демон
     drop(socket_file);
+
+    // Итоговые метрики — после всех дренажей, чтобы счётчики были окончательными
+    if let Some(reporter) = &reporter {
+        match reporter.save(&metrics, true) {
+            Ok(path) => info!(
+                "Метрики сохранены в {} и {}",
+                path.display(),
+                reporter.sessions_path().display()
+            ),
+            Err(e) => error!("Не удалось сохранить метрики: {}", e),
+        }
+    }
 
     info!("Завершено");
 

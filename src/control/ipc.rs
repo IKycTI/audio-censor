@@ -10,14 +10,14 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::{error, info, warn};
 
 use crate::control::ControlCommand;
-use crate::metrics::Metrics;
+use crate::metrics::{Metrics, MetricsReporter};
 
 #[derive(Clone)]
 pub struct ControlHandle {
     running: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
     dict_reload_requested: Arc<AtomicBool>,
-    metrics_file: String,
+    reporter: Option<MetricsReporter>,
 }
 
 impl ControlHandle {
@@ -25,13 +25,13 @@ impl ControlHandle {
         running: Arc<AtomicBool>,
         metrics: Arc<Metrics>,
         dict_reload_requested: Arc<AtomicBool>,
-        metrics_file: String,
+        reporter: Option<MetricsReporter>,
     ) -> Self {
         Self {
             running,
             metrics,
             dict_reload_requested,
-            metrics_file,
+            reporter,
         }
     }
 
@@ -48,11 +48,13 @@ impl ControlHandle {
             ControlCommand::SaveMetrics => {
                 // Счётчики атомарные, поэтому снимок можно сделать прямо из IPC-потока,
                 // не дёргая оркестратор
-                if self.metrics_file.is_empty() {
-                    return "ERROR: metrics_file не задан в конфиге".into();
-                }
-                match self.metrics.save(&self.metrics_file) {
-                    Ok(()) => format!("OK: metrics saved to {}", self.metrics_file),
+                let Some(reporter) = &self.reporter else {
+                    return "ERROR: сохранение метрик выключено (metrics.enabled / metrics.dir)"
+                        .into();
+                };
+                // Промежуточный снимок: в sessions.jsonl не попадает, итог перезапишет файл
+                match reporter.save(&self.metrics, false) {
+                    Ok(path) => format!("OK: metrics saved to {}", path.display()),
                     Err(e) => format!("ERROR: {}", e),
                 }
             }

@@ -58,7 +58,6 @@ where
     dict_reload_req: Arc<AtomicBool>,
     metrics_enabled: bool,
     metrics: Arc<Metrics>,
-    metrics_file: String,
     raw_read_buf: Vec<T>,
     last_metrics_export: Instant,
     // None — периодическое логирование метрик выключено (export_interval_ms = 0)
@@ -248,7 +247,6 @@ where
             dict_reload_req,
             metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
-            metrics_file: settings.metrics.metrics_file.clone(),
             raw_read_buf: vec![T::EQUILIBRIUM; raw_read_buf_capacity],
             last_metrics_export: Instant::now(),
             metrics_export_interval: (settings.metrics.export_interval_ms > 0)
@@ -290,6 +288,14 @@ where
             //    независимо от того, что с ними будет решено дальше
             trace!("В delay_buffer отправлено {} сырых семплов", len_rs);
             self.delay_buffer.push(raw_samples);
+            self.metrics.stream_duration_ms.store(
+                stream_pos_to_ms(
+                    self.delay_buffer.input_position(),
+                    self.sample_rate,
+                    self.channels,
+                ),
+                Ordering::Relaxed,
+            );
 
             // 3. Параллельно — конвертация в i16-моно и отправка в поток распознавания
             //    (нарезка на чанки, Vosk и decision engine работают там)
@@ -417,17 +423,6 @@ where
             &self.metrics.snapshot(),
             "Оркестратор остановлен, итоговые метрики",
         );
-
-        // 7. Выгрузить итоговые метрики — после всех дренажей, чтобы счётчики были окончательными
-        if self.metrics_enabled && !self.metrics_file.is_empty() {
-            match self.metrics.save(&self.metrics_file) {
-                Ok(()) => info!("Метрики сохранены в {}", self.metrics_file),
-                Err(e) => error!(
-                    "Не удалось сохранить метрики в {}: {}",
-                    self.metrics_file, e
-                ),
-            }
-        }
     }
 
     pub fn running_handle(&self) -> Arc<AtomicBool> {

@@ -3,6 +3,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]
 pub struct Metrics {
+    pub stream_duration_ms: AtomicU64, // сколько звука принято с начала сеанса
     pub dropped_input_samples: AtomicU64, // capture: буфер был полон
     pub dropped_output_samples: AtomicU64, // orchestrator: не успели записать в output buffer
     pub underrun_samples: AtomicU64, // playback: не хватило данных, отдана тишина (без старта и завершения)
@@ -37,6 +38,7 @@ impl Metrics {
         let latency_count = self.recognition_latency_count.load(Ordering::Relaxed);
         let latency_sum = self.recognition_latency_sum_ms.load(Ordering::Relaxed);
         MetricsSnapshot {
+            stream_duration_ms: self.stream_duration_ms.load(Ordering::Relaxed),
             dropped_input_samples: self.dropped_input_samples.load(Ordering::Relaxed),
             dropped_output_samples: self.dropped_output_samples.load(Ordering::Relaxed),
             underrun_samples: self.underrun_samples.load(Ordering::Relaxed),
@@ -59,20 +61,11 @@ impl Metrics {
                 .then(|| self.recognition_latency_max_ms.load(Ordering::Relaxed)),
         }
     }
-
-    pub fn save(&self, path: &str) -> Result<(), String> {
-        let snapshot = self.snapshot();
-        let serialized = serde_json::to_string_pretty(&snapshot).map_err(|e| e.to_string())?;
-        // Пишем во временный файл и переименовываем: rename атомарен в пределах ФС,
-        // поэтому внешний читатель никогда не увидит наполовину записанный JSON
-        let tmp_path = format!("{path}.tmp");
-        std::fs::write(&tmp_path, serialized).map_err(|e| e.to_string())?;
-        std::fs::rename(&tmp_path, path).map_err(|e| e.to_string())
-    }
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct MetricsSnapshot {
+    pub stream_duration_ms: u64,
     pub dropped_input_samples: u64,
     pub dropped_output_samples: u64,
     pub underrun_samples: u64,
