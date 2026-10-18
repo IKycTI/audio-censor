@@ -69,6 +69,37 @@ where
             settings.decision.words_dict_path
         );
         let word_dict = load_banned_words(&settings.decision.words_dict_path)?;
+        // Сначала всё, что проверяется быстро и чаще всего ошибочно (устройства и их
+        // параметры), и только потом долгая загрузка модели: иначе об опечатке в имени
+        // устройства пользователь узнал бы лишь после загрузки Vosk
+        let input_device = match capture::get_device(&settings.audio.input_device) {
+            Ok(device) => device,
+            Err(e) => {
+                return Err(OrchestratorError::CaptureDeviceError(e));
+            }
+        };
+
+        let input_config = match capture::get_config(&input_device, &settings.audio) {
+            Ok(config) => config,
+            Err(e) => {
+                return Err(OrchestratorError::CaptureConfigError(e));
+            }
+        };
+
+        let output_device = match playback::get_device(&settings.audio.output_device) {
+            Ok(device) => device,
+            Err(e) => {
+                return Err(OrchestratorError::PlaybackDeviceError(e));
+            }
+        };
+
+        let output_config = match playback::get_config(&output_device, &settings.audio) {
+            Ok(config) => config,
+            Err(e) => {
+                return Err(OrchestratorError::PlaybackConfigError(e));
+            }
+        };
+
         info!("Загрузка модели из {}...", settings.recognition.model_path);
         let model = match Model::new(&settings.recognition.model_path) {
             Some(m) => {
@@ -157,20 +188,8 @@ where
 
         let (output_producer, output_consumer) = buffer::create_scsp::<T>(ring_capacity);
 
-        let input_device = match capture::get_device(&settings.audio.input_device) {
-            Ok(device) => device,
-            Err(e) => {
-                return Err(OrchestratorError::CaptureDeviceError(e));
-            }
-        };
-
-        let input_config = match capture::get_config(&input_device, &settings.audio) {
-            Ok(config) => config,
-            Err(e) => {
-                return Err(OrchestratorError::CaptureConfigError(e));
-            }
-        };
-
+        // cpal-потоки создаются последними: на некоторых бэкендах поток начинает работать
+        // уже при создании, и захват не должен копить звук, пока грузится модель
         let input_stream = match capture::build_capture_stream(
             input_device,
             input_config,
@@ -180,20 +199,6 @@ where
             Ok(stream) => stream,
             Err(e) => {
                 return Err(OrchestratorError::CaptureStreamError(e.to_string()));
-            }
-        };
-
-        let output_device = match playback::get_device(&settings.audio.output_device) {
-            Ok(device) => device,
-            Err(e) => {
-                return Err(OrchestratorError::PlaybackDeviceError(e));
-            }
-        };
-
-        let output_config = match playback::get_config(&output_device, &settings.audio) {
-            Ok(config) => config,
-            Err(e) => {
-                return Err(OrchestratorError::PlaybackConfigError(e));
             }
         };
 
