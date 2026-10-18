@@ -2,10 +2,17 @@ use crate::config::LoggingSettings;
 use std::fs::{self, File};
 use std::path::Path;
 use std::sync::Once;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tracing::info;
 use tracing_subscriber::{EnvFilter, fmt};
 
 static LOGGER_INIT: Once = Once::new();
+static LOGS_TO_FILE: AtomicBool = AtomicBool::new(false);
+
+/// Пишется ли лог в файл (а не в терминал)
+pub fn logs_to_file() -> bool {
+    LOGS_TO_FILE.load(Ordering::Relaxed)
+}
 
 /// Инициализирует глобальный логгер по секции `[logging]` конфига:
 /// уровень — `level`, вывод — в файл `file_path` или в stdout, если путь пуст.
@@ -39,6 +46,7 @@ fn try_init_logger(settings: &LoggingSettings) -> Result<(), String> {
             .with_env_filter(env_filter)
             .with_ansi(false)
             .init();
+        LOGS_TO_FILE.store(true, Ordering::Relaxed);
     } else {
         // Лог в stdout в компактном формате
         fmt().with_env_filter(env_filter).compact().init();

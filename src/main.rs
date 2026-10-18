@@ -1,6 +1,6 @@
 use audio_censor::config::Settings;
 use audio_censor::control::{self, ControlCommand, ControlHandle};
-use audio_censor::logging::init_logger;
+use audio_censor::logging::{init_logger, logs_to_file};
 use audio_censor::pipeline::Orchestrator;
 use audio_censor::{capture, playback};
 
@@ -134,11 +134,13 @@ where
     ExitCode::SUCCESS
 }
 
-/// Фатальная ошибка запуска: в лог и в stderr. Лог может писаться в файл,
-/// и без stderr пользователь в терминале увидел бы только код возврата
+/// Фатальная ошибка запуска: в лог, а если лог пишется в файл — ещё и в stderr,
+/// иначе пользователь в терминале увидел бы только код возврата
 fn fatal(message: impl std::fmt::Display) -> ExitCode {
     error!("{}", message);
-    eprintln!("{}", message);
+    if logs_to_file() {
+        eprintln!("{}", message);
+    }
     ExitCode::FAILURE
 }
 

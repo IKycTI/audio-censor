@@ -37,16 +37,18 @@ model_path = "models/vosk-model-ru-0.22"
 min_confidence = 0.0
 
 [masking]
-# строка: способ маскирования ("Silence" | "Beep" | "MuteAttenuate")
+# строка: способ маскирования ("Silence" | "Beep" | "MuteAttenuate"), с заглавной буквы
 strategy = "Beep"
-# число: частота бипа, если strategy = "beep"
+# число: частота бипа в Гц, если strategy = "Beep"; меньше половины sample_rate
 beep_frequency_hz = 1000
-# громкость beep
-amplitude = 10
-# число: уровень приглушения в дБ, если strategy = "mute_attenuate"
-attenuation_db = 0
-# число: запас по времени до/после найденного слова, добавляемый к маске
-padding_ms = 10
+# число (0.0–1.0): громкость бипа относительно полной шкалы, если strategy = "Beep"
+amplitude = 0.3
+# число (≤ 0): уровень приглушения в дБ, если strategy = "MuteAttenuate";
+# -20 — в 10 раз тише, -30 — примерно в 30 раз
+attenuation_db = -30
+# число: запас по времени до/после найденного слова, добавляемый к маске, мс;
+# покрывает неточность таймстемпов Vosk на краях слова
+padding_ms = 50
 
 [control]
 # булево: включён ли интерфейс управления демоном на лету

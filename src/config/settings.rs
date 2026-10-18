@@ -45,6 +45,31 @@ impl Settings {
             ));
         }
 
+        // Параметры маскирования проверяются все, а не только для выбранной стратегии:
+        // иначе ошибка всплывёт только при смене strategy
+        let masking = &self.masking;
+        if !(0.0..=1.0).contains(&masking.amplitude) {
+            return Err(format!(
+                "masking.amplitude должно быть в диапазоне 0.0–1.0 (сейчас {}); \
+                 больше 1 бип обрезается и превращается в меандр",
+                masking.amplitude
+            ));
+        }
+        if masking.attenuation_db > 0.0 || masking.attenuation_db.is_nan() {
+            return Err(format!(
+                "masking.attenuation_db должно быть не больше 0 (сейчас {}); \
+                 положительное значение усиливает звук, а не приглушает",
+                masking.attenuation_db
+            ));
+        }
+        let nyquist = self.audio.sample_rate as f32 / 2.0;
+        if !(masking.beep_frequency_hz > 0.0 && masking.beep_frequency_hz < nyquist) {
+            return Err(format!(
+                "masking.beep_frequency_hz должно быть в диапазоне (0, {}) Гц (сейчас {})",
+                nyquist, masking.beep_frequency_hz
+            ));
+        }
+
         // Выходной буфер должен вмещать цель компенсации дрейфа с запасом в обе стороны
         if (self.buffer.ring_capacity_ms as u64) < 2 * OUTPUT_TARGET_FILL_MS {
             return Err(format!(
