@@ -1,4 +1,4 @@
-use audio_censor::{ms_to_frames, ms_to_stream_pos, whole_frames};
+use audio_censor::{ms_to_frames, ms_to_stream_pos, stream_pos_to_ms, whole_frames};
 
 // ── ms_to_frames ───────────────────────────────────────────────────
 
@@ -36,6 +36,43 @@ fn ms_to_stream_pos_is_frames_times_channels() {
             );
         }
     }
+}
+
+// ── stream_pos_to_ms ───────────────────────────────────────────────
+
+#[test]
+fn stream_pos_to_ms_inverts_ms_to_stream_pos_for_whole_frames_per_ms() {
+    // 48 и 16 кадров на мс — преобразование туда и обратно точное
+    for ms in [0, 1, 7, 999, 3000, 86_400_000] {
+        for (rate, channels) in [(48000, 1), (48000, 2), (16000, 6)] {
+            let pos = ms_to_stream_pos(ms, rate, channels);
+            assert_eq!(
+                stream_pos_to_ms(pos, rate, channels),
+                ms,
+                "{ms} мс, {rate} Гц"
+            );
+        }
+    }
+}
+
+#[test]
+fn stream_pos_to_ms_round_trip_loses_at_most_one_ms_at_44100() {
+    // 1 мс = 44.1 кадра: туда — вниз до 44 кадров, обратно 44 кадра = 0.998 мс → 0
+    for ms in 0..2000 {
+        let back = stream_pos_to_ms(ms_to_stream_pos(ms, 44100, 2), 44100, 2);
+        assert!(ms - back <= 1, "{ms} мс → {back} мс");
+    }
+    assert_eq!(
+        stream_pos_to_ms(ms_to_stream_pos(3000, 44100, 2), 44100, 2),
+        3000
+    );
+}
+
+#[test]
+fn stream_pos_to_ms_rounds_down() {
+    // 264601 — правый канал кадра 132300 = ровно 3000 мс; 264599 — ещё 2999 мс
+    assert_eq!(stream_pos_to_ms(264601, 44100, 2), 3000);
+    assert_eq!(stream_pos_to_ms(264599, 44100, 2), 2999);
 }
 
 // ── whole_frames ───────────────────────────────────────────────────
