@@ -9,7 +9,7 @@ pub enum MaskingStrategy {
     MuteAttenuate,
 }
 
-pub trait Masking<T: Default + Copy + Sample + Duplex<f32>> {
+pub trait Masking<T: Copy + Sample + Duplex<f32>> {
     fn apply(
         &self,
         original: &[T],
@@ -27,7 +27,7 @@ impl Silence {
     }
 }
 
-impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Silence {
+impl<T: Copy + Sample + Duplex<f32>> Masking<T> for Silence {
     fn apply(
         &self,
         original: &[T],
@@ -35,7 +35,7 @@ impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Silence {
         _offset_interval: u64,
         _channels: u16,
     ) -> Vec<T> {
-        vec![T::default(); original.len()]
+        vec![T::EQUILIBRIUM; original.len()]
     }
 }
 
@@ -53,7 +53,7 @@ impl Beep {
     }
 }
 
-impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for Beep {
+impl<T: Copy + Sample + Duplex<f32>> Masking<T> for Beep {
     fn apply(
         &self,
         original: &[T],
@@ -90,7 +90,7 @@ impl MuteAttenuate {
     }
 }
 
-impl<T: Default + Copy + Sample + Duplex<f32>> Masking<T> for MuteAttenuate {
+impl<T: Copy + Sample + Duplex<f32>> Masking<T> for MuteAttenuate {
     fn apply(
         &self,
         original: &[T],

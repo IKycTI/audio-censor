@@ -87,7 +87,7 @@ fn main() -> ExitCode {
 
 fn start<T>(settings: Settings) -> ExitCode
 where
-    T: Default + Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
+    T: Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
 {
     info!("Запуск audio-censor");
     let socket_path = settings.control.socket_path.clone();

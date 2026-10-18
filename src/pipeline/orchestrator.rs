@@ -36,7 +36,7 @@ const RAW_READ_BUF_MS: u64 = 100;
 
 pub struct Orchestrator<T>
 where
-    T: Default + Copy + Sample + Duplex<f32>,
+    T: Copy + Sample + Duplex<f32>,
 {
     consumer: HeapCons<T>,
     producer: HeapProd<T>,
@@ -60,7 +60,7 @@ where
 
 impl<T> Orchestrator<T>
 where
-    T: Default + Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
+    T: Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
 {
     pub fn new(settings: Settings) -> Result<Self, OrchestratorError> {
         info!(
@@ -219,7 +219,7 @@ where
             metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
             metrics_file: settings.metrics.metrics_file.clone(),
-            raw_read_buf: vec![T::default(); raw_read_buf_capacity],
+            raw_read_buf: vec![T::EQUILIBRIUM; raw_read_buf_capacity],
             last_metrics_export: Instant::now(),
             metrics_export_interval: Duration::from_millis(settings.metrics.export_interval_ms),
             output_drain_wait,
@@ -422,7 +422,7 @@ where
 
 fn register_intervals<T>(masker: &mut Masker<T>, metrics: &Metrics, intervals: Vec<IntervalBanTime>)
 where
-    T: Default + Copy + Sample + Duplex<f32>,
+    T: Copy + Sample + Duplex<f32>,
 {
     for interval in intervals {
         let timing = masker.add_interval(&interval);

@@ -24,7 +24,7 @@ impl IntervalTiming {
 }
 pub struct Masker<T>
 where
-    T: Default + Copy + Sample + Duplex<f32>,
+    T: Copy + Sample + Duplex<f32>,
 {
     strategy: Box<dyn Masking<T>>,
     padding_sample: u64,
@@ -61,7 +61,7 @@ impl ActiveInterval {
 
 impl<T> Masker<T>
 where
-    T: Default + Copy + Sample + Duplex<f32>,
+    T: Copy + Sample + Duplex<f32>,
 {
     pub fn new(
         strategy: Box<dyn Masking<T>>,

@@ -16,7 +16,7 @@ pub fn build_playback_stream<T>(
     metrics: Arc<Metrics>,
 ) -> Result<Stream, BuildStreamError>
 where
-    T: SizedSample + Send + 'static + Default,
+    T: SizedSample + Send + 'static,
 {
     let channels = stream_config.channels;
     device.build_output_stream(
@@ -27,7 +27,8 @@ where
             let popped = consumer.pop_slice(&mut data[..available]);
             if popped < data.len() {
                 for sample in &mut data[popped..] {
-                    *sample = T::default(); // тишина при нехватке данных
+                    // Тишина при нехватке данных: для U8/U16 это середина диапазона, а не 0
+                    *sample = T::EQUILIBRIUM;
                 }
                 metrics
                     .underrun_samples
