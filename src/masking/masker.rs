@@ -5,6 +5,23 @@ use dasp::{Sample, sample::Duplex};
 use crate::{decision::IntervalBanTime, masking::strategies::*, ms_to_stream_pos};
 
 const DEFAULT_FADE_MS: u64 = 5;
+
+/// Успел ли интервал зарегистрироваться до того, как слово ушло на выход
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum IntervalTiming {
+    /// Слово ещё целиком в задержке — будет заглушено полностью
+    OnTime,
+    /// Начало слова уже прозвучало, заглушена только оставшаяся часть
+    PartiallyLate,
+    /// Слово прозвучало целиком, маскировать нечего
+    Late,
+}
+
+impl IntervalTiming {
+    pub fn is_late(self) -> bool {
+        self != IntervalTiming::OnTime
+    }
+}
 pub struct Masker<T>
 where
     T: Default + Copy + Sample + Duplex<f32>,
@@ -67,13 +84,24 @@ where
         }
     }
 
-    pub fn add_interval(&mut self, interval: &IntervalBanTime) {
-        let start = ms_to_stream_pos(interval.start_time, self.sample_rate, self.channels)
-            .saturating_sub(self.padding_sample);
-        let end = ms_to_stream_pos(interval.end_time, self.sample_rate, self.channels)
-            + self.padding_sample
+    pub fn add_interval(&mut self, interval: &IntervalBanTime) -> IntervalTiming {
+        let word_start = ms_to_stream_pos(interval.start_time, self.sample_rate, self.channels);
+        let word_end = ms_to_stream_pos(interval.end_time, self.sample_rate, self.channels)
             + self.channels as u64
             - 1;
+
+        // Опоздание считается по самому слову, без паддинга: паддинг — запас,
+        // его потеря не означает, что слово было слышно
+        let timing = if word_end < self.next_pos {
+            IntervalTiming::Late
+        } else if word_start < self.next_pos {
+            IntervalTiming::PartiallyLate
+        } else {
+            IntervalTiming::OnTime
+        };
+
+        let start = word_start.saturating_sub(self.padding_sample);
+        let end = word_end + self.padding_sample;
 
         // Если начало интервала уже ушло на выход, фейд-ин начинается с текущего кадра
         let channels = self.channels as u64;
@@ -102,6 +130,8 @@ where
         // Ещё ничего не прозвучало — фаза от нового начала, иначе продолжается
         merged.phase_start = playing_phase.unwrap_or(merged.start);
         self.active_intervals.push(merged);
+
+        timing
     }
 
     pub fn process(&mut self, input: &[(u64, T)]) -> Vec<T> {

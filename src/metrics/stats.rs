@@ -9,6 +9,7 @@ pub struct Metrics {
     pub words_recognized: AtomicU64,      // сколько слов всего распознано
     pub words_censored: AtomicU64,        // сколько слов реально попало под цензуру
     pub recognizer_errors: AtomicU64,     // сбои accept_waveform/result
+    pub late_intervals: AtomicU64,        // опаздывающие интервалы
 }
 
 impl Metrics {
@@ -20,6 +21,7 @@ impl Metrics {
             words_recognized: self.words_recognized.load(Ordering::Relaxed),
             words_censored: self.words_censored.load(Ordering::Relaxed),
             recognizer_errors: self.recognizer_errors.load(Ordering::Relaxed),
+            late_intervals: self.late_intervals.load(Ordering::Relaxed),
         }
     }
 
@@ -42,4 +44,5 @@ pub struct MetricsSnapshot {
     pub words_recognized: u64,
     pub words_censored: u64,
     pub recognizer_errors: u64,
+    pub late_intervals: u64,
 }

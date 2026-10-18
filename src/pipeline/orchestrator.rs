@@ -13,14 +13,14 @@ use ringbuf::{
     HeapCons, HeapProd,
     traits::{Consumer, Observer, Producer},
 };
-use tracing::{debug, error, info};
+use tracing::{debug, error, info, warn};
 use vosk::Model;
 
 use crate::{
     buffer::{self, DelayBuffer},
     capture,
     config::{BanSet, Settings},
-    decision::DecisionEngine,
+    decision::{DecisionEngine, IntervalBanTime},
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
@@ -85,11 +85,7 @@ where
 
         let metrics = Arc::new(Metrics::default());
 
-        let chunker = Chunker::new(
-            settings.framing.chunk_size_ms,
-            settings.framing.overlap_ms,
-            settings.audio.sample_rate,
-        );
+        let chunker = Chunker::new(settings.framing.chunk_size_ms, settings.audio.sample_rate);
 
         let recognizer = match SpeechRecognizer::new(&model, settings.audio.sample_rate, 0) {
             Ok(r) => r,
@@ -256,6 +252,7 @@ where
                     words_recognized = snap.words_recognized,
                     words_censored = snap.words_censored,
                     recognizer_errors = snap.recognizer_errors,
+                    late_intervals = snap.late_intervals,
                     "метрики"
                 );
                 self.last_metrics_export = Instant::now();
@@ -327,9 +324,8 @@ where
 
         // 3–4. Закрыть канал распознавания: поток дожимает хвост чанкера и незавершённую
         //      фразу, после join забираем последние интервалы (finish потребляет поток)
-        for interval in self.recognition.finish() {
-            self.masker.add_interval(&interval);
-        }
+        let last_intervals = self.recognition.finish();
+        register_intervals(&mut self.masker, &self.metrics, last_intervals);
 
         // 5. Дожать хвост delay_buffer — все сэмплы, включая те, что не отлежали полный delay_ms
         //    (finish потребляет delay_buffer)
@@ -380,9 +376,8 @@ where
         Arc::clone(&self.metrics)
     }
     fn add_ready_intervals(&mut self) {
-        for interval in self.recognition.try_recv_intervals() {
-            self.masker.add_interval(&interval);
-        }
+        let intervals = self.recognition.try_recv_intervals();
+        register_intervals(&mut self.masker, &self.metrics, intervals);
     }
 }
 
@@ -422,5 +417,24 @@ where
         metrics
             .dropped_output_samples
             .fetch_add((processed.len() - pushed) as u64, Ordering::Relaxed);
+    }
+}
+
+fn register_intervals<T>(masker: &mut Masker<T>, metrics: &Metrics, intervals: Vec<IntervalBanTime>)
+where
+    T: Default + Copy + Sample + Duplex<f32>,
+{
+    for interval in intervals {
+        let timing = masker.add_interval(&interval);
+        if timing.is_late() {
+            // Главный показатель того, хватает ли delay_ms на распознавание
+            metrics.late_intervals.fetch_add(1, Ordering::Relaxed);
+            warn!(
+                start_ms = interval.start_time,
+                end_ms = interval.end_time,
+                ?timing,
+                "Интервал опоздал: слово уже прозвучало"
+            );
+        }
     }
 }
