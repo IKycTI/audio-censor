@@ -80,7 +80,7 @@ where
             channels,
             next_pos: 0,
             active_intervals: Vec::new(),
-            _marker: PhantomData::default(),
+            _marker: PhantomData,
         }
     }
 

@@ -76,7 +76,8 @@ fn empty_input_returns_empty() {
 fn output_never_exceeds_i16_range() {
     let data: [f32; 6] = [1.5, -1.5, 2.0, -2.0, 100.0, -100.0]; // выходящие за диапазон значения
     let result = convert_to_i16_mono(&data, 1);
-    for &s in &result {
-        assert!(s >= -i16::MAX && s <= i16::MAX);
-    }
+    // Значения обрезаются до ±1.0, а не заворачиваются через переполнение;
+    // шкала симметричная, поэтому минимум — -i16::MAX, а не i16::MIN
+    let max = i16::MAX;
+    assert_eq!(result, vec![max, -max, max, -max, max, -max]);
 }

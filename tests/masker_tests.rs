@@ -561,9 +561,10 @@ fn silence_uses_equilibrium_for_unsigned() {
     let input: Vec<(u64, u16)> = (0..60).map(|pos| (pos, 40000)).collect();
     let output = m.process(&input);
 
-    for pos in 15..=35 {
+    for (i, &sample) in output[15..=35].iter().enumerate() {
+        let pos = 15 + i;
         assert_eq!(
-            output[pos], 32768,
+            sample, 32768,
             "позиция {pos}: тишина для u16 — 32768, а не 0"
         );
     }

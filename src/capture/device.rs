@@ -10,23 +10,14 @@ use tracing::info;
 pub fn get_device(input_device: &str) -> Result<Device, String> {
     let host = cpal::default_host();
 
-    let device: Option<Device>;
-    if input_device.is_empty() || input_device.to_lowercase() == "default" {
-        device = host.default_input_device();
+    let device = if input_device.is_empty() || input_device.to_lowercase() == "default" {
+        host.default_input_device()
     } else {
-        let devices = host.input_devices().map_err(|e| e.to_string())?;
-
-        device = devices
-            .filter_map(|d| {
-                let description = d.description().ok()?;
-                if description.name() == input_device {
-                    Some(d)
-                } else {
-                    None
-                }
-            })
-            .next();
-    }
+        host.input_devices().map_err(|e| e.to_string())?.find(|d| {
+            d.description()
+                .is_ok_and(|desc| desc.name() == input_device)
+        })
+    };
     let device = device.ok_or_else(|| {
         format!(
             "устройство ввода '{}' не найдено (список устройств: --show-device input)",

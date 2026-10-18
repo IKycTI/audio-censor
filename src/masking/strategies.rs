@@ -19,6 +19,7 @@ pub trait Masking<T: Copy + Sample + Duplex<f32>> {
     ) -> Vec<T>;
 }
 
+#[derive(Default)]
 pub struct Silence {}
 
 impl Silence {

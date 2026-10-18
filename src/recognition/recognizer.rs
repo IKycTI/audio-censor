@@ -16,7 +16,7 @@ impl SpeechRecognizer {
         if let Some(mut recognizer) = Recognizer::new(model, sample_rate as f32) {
             recognizer.set_words(true);
             Ok(SpeechRecognizer {
-                recognizer: recognizer,
+                recognizer,
                 _sample_rate: sample_rate,
                 stream_offset_ms,
             })

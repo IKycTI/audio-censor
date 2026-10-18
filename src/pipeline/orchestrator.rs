@@ -442,15 +442,9 @@ where
 }
 
 pub(crate) fn load_banned_words(dict_path: &str) -> Result<BanSet, OrchestratorError> {
-    match BanSet::new(dict_path) {
-        Ok(dict) => {
-            info!("Словарь загружен");
-            return Ok(dict);
-        }
-        Err(e) => {
-            return Err(OrchestratorError::WordDictError(e));
-        }
-    };
+    let dict = BanSet::new(dict_path).map_err(OrchestratorError::WordDictError)?;
+    info!("Словарь загружен");
+    Ok(dict)
 }
 
 #[derive(Debug)]
