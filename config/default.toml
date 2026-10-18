@@ -24,9 +24,9 @@ max_distance = 1
 
 [framing]
 # число: длительность одного чанка для распознавателя, мс
-chunk_size_ms = 10000
-# число: перекрытие соседних чанков, мс (0 = без перекрытия)
-overlap_ms = 0
+chunk_size_ms = 100
+# число: перекрытие соседних чанков, мс
+overlap_ms = 10
 
 [recognition]
 # строка: путь к каталогу с моделью распознавания
@@ -42,15 +42,15 @@ case_sensitive = false
 
 [masking]
 # строка: способ маскирования ("Silence" | "Beep" | "MuteAttenuate")
-strategy = "Silence"
+strategy = "Beep"
 # число: частота бипа, если strategy = "beep"
-beep_frequency_hz = 0
+beep_frequency_hz = 1000
 # громкость beep
 amplitude = 10
 # число: уровень приглушения в дБ, если strategy = "mute_attenuate"
 attenuation_db = 0
 # число: запас по времени до/после найденного слова, добавляемый к маске
-padding_ms = 0
+padding_ms = 10
 
 [control]
 # булево: включён ли интерфейс управления демоном на лету
