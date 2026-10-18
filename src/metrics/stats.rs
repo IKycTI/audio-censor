@@ -13,7 +13,9 @@ pub struct Metrics {
     pub partial_intervals: AtomicU64, // из них найдено по частичной гипотезе, до конца фразы
     pub unconfirmed_partial_intervals: AtomicU64, // частичная находка, которой нет в финале — ложное срабатывание
     pub drift_dropped_frames: AtomicU64,          // дрейф часов: выброшено кадров на выходе
-    pub drift_inserted_frames: AtomicU64, // дрейф часов и срывы: добавлено кадров (дубли и тишина)
+    pub drift_inserted_frames: AtomicU64,         // дрейф часов: продублировано кадров на выходе
+    pub output_prefills: AtomicU64, // выходной буфер был пуст и дополнен тишиной: 1 — старт, больше — срывы
+    pub output_prefill_frames: AtomicU64, // сколько кадров тишины добавлено при этом
     // Задержка распознавания запрещённых слов: от конца слова до регистрации интервала, мс потока
     recognition_latency_count: AtomicU64,
     recognition_latency_sum_ms: AtomicU64,
@@ -48,6 +50,8 @@ impl Metrics {
                 .load(Ordering::Relaxed),
             drift_dropped_frames: self.drift_dropped_frames.load(Ordering::Relaxed),
             drift_inserted_frames: self.drift_inserted_frames.load(Ordering::Relaxed),
+            output_prefills: self.output_prefills.load(Ordering::Relaxed),
+            output_prefill_frames: self.output_prefill_frames.load(Ordering::Relaxed),
             recognition_latency_samples: latency_count,
             // Пока нет ни одного слова — null, а не 0: ноль выглядел бы как мгновенное распознавание
             recognition_latency_avg_ms: (latency_count > 0).then(|| latency_sum / latency_count),
@@ -80,6 +84,8 @@ pub struct MetricsSnapshot {
     pub unconfirmed_partial_intervals: u64,
     pub drift_dropped_frames: u64,
     pub drift_inserted_frames: u64,
+    pub output_prefills: u64,
+    pub output_prefill_frames: u64,
     pub recognition_latency_samples: u64,
     pub recognition_latency_avg_ms: Option<u64>,
     pub recognition_latency_max_ms: Option<u64>,

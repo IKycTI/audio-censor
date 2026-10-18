@@ -319,10 +319,20 @@ where
             match self.drift.adjust(&mut processed, fill, T::EQUILIBRIUM) {
                 DriftCorrection::None => {}
                 DriftCorrection::Prefilled(frames) => {
-                    info!("Выходной буфер пуст: добавлено {} кадров тишины", frames);
+                    // Первое заполнение — старт вывода; повторное — буфер опустел посреди
+                    // работы, звук прерывался: это не дрейф, а срыв
+                    let before = self.metrics.output_prefills.fetch_add(1, Ordering::Relaxed);
                     self.metrics
-                        .drift_inserted_frames
+                        .output_prefill_frames
                         .fetch_add(frames as u64, Ordering::Relaxed);
+                    if before == 0 {
+                        info!("Старт вывода: добавлено {} кадров тишины", frames);
+                    } else {
+                        warn!(
+                            "Выходной буфер опустел посреди работы: добавлено {} кадров тишины",
+                            frames
+                        );
+                    }
                 }
                 DriftCorrection::DroppedFrame => {
                     self.metrics
@@ -519,6 +529,8 @@ fn log_metrics(snap: &MetricsSnapshot, message: &str) {
         latency_max_ms = snap.recognition_latency_max_ms,
         drift_dropped = snap.drift_dropped_frames,
         drift_inserted = snap.drift_inserted_frames,
+        output_prefills = snap.output_prefills,
+        output_prefill_frames = snap.output_prefill_frames,
         "{}",
         message
     );

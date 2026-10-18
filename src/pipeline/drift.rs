@@ -30,7 +30,8 @@ pub struct DriftCompensator {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DriftCorrection {
     None,
-    /// Буфер был пуст (старт или срыв воспроизведения): в начало добавлено столько кадров тишины
+    /// Буфер был пуст (старт или срыв воспроизведения): в начало добавлено столько кадров тишины.
+    /// Это не компенсация дрейфа — считается отдельно от DroppedFrame/DuplicatedFrame
     Prefilled(usize),
     DroppedFrame,
     DuplicatedFrame,
