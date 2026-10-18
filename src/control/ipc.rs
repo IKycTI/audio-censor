@@ -1,10 +1,13 @@
-use std::io::{BufRead, BufReader, Write};
+use std::fs::{self, Permissions};
+use std::io::{BufRead, BufReader, ErrorKind, Write};
+use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
+use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use tracing::error;
+use tracing::{error, info, warn};
 
 use crate::control::ControlCommand;
 use crate::metrics::Metrics;
@@ -60,10 +63,83 @@ impl ControlHandle {
         }
     }
 }
-pub fn run_control_server(socket_path: &str, handle: ControlHandle) -> std::io::Result<()> {
-    let _ = std::fs::remove_file(socket_path);
-    let listener = UnixListener::bind(socket_path)?;
+/// Занятый control-сокет. Занимается в самом начале запуска — чтобы второй экземпляр
+/// демона узнал о первом до загрузки модели, — а команды обслуживает после `serve`
+pub struct ControlSocket {
+    listener: UnixListener,
+    file: SocketFile,
+}
 
+/// Файл сокета, который удаляется вместе с этим объектом
+pub struct SocketFile {
+    path: PathBuf,
+}
+
+impl Drop for SocketFile {
+    fn drop(&mut self) {
+        if let Err(e) = fs::remove_file(&self.path)
+            && e.kind() != ErrorKind::NotFound
+        {
+            error!(
+                "Не удалось удалить control-сокет {}: {}",
+                self.path.display(),
+                e
+            );
+        }
+    }
+}
+
+impl ControlSocket {
+    /// Занять сокет. Если на нём уже отвечает другой демон — ошибка, а не перехват:
+    /// иначе второй экземпляр молча отобрал бы управление у первого
+    pub fn bind(path: &Path) -> Result<Self, String> {
+        match UnixStream::connect(path) {
+            Ok(_) => {
+                return Err(format!(
+                    "демон уже запущен: на {} отвечает другой экземпляр",
+                    path.display()
+                ));
+            }
+            // Файл есть, но никто не слушает — остался от аварийно завершённого демона
+            Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
+                warn!("Удаляю устаревший control-сокет {}", path.display());
+                fs::remove_file(path).map_err(|e| {
+                    format!(
+                        "не удалось удалить устаревший сокет {}: {}",
+                        path.display(),
+                        e
+                    )
+                })?;
+            }
+            Err(e) if e.kind() == ErrorKind::NotFound => {}
+            Err(e) => return Err(format!("не удалось проверить {}: {}", path.display(), e)),
+        }
+
+        let listener = UnixListener::bind(path)
+            .map_err(|e| format!("не удалось создать сокет {}: {}", path.display(), e))?;
+        // С этого момента файл наш и удалится при любой ошибке запуска
+        let file = SocketFile {
+            path: path.to_path_buf(),
+        };
+
+        // Команды управления (в том числе shutdown) — только владельцу процесса
+        fs::set_permissions(path, Permissions::from_mode(0o600))
+            .map_err(|e| format!("не удалось выставить права на {}: {}", path.display(), e))?;
+
+        info!("Control-сокет: {}", path.display());
+        Ok(ControlSocket { listener, file })
+    }
+
+    /// Начать обслуживать команды в отдельном потоке. Возвращённый `SocketFile` нужно
+    /// держать до завершения демона: при его уничтожении файл сокета удаляется
+    pub fn serve(self, handle: ControlHandle) -> SocketFile {
+        let ControlSocket { listener, file } = self;
+        std::thread::spawn(move || accept_loop(listener, handle));
+        file
+    }
+}
+
+fn accept_loop(listener: UnixListener, handle: ControlHandle) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -73,7 +149,6 @@ pub fn run_control_server(socket_path: &str, handle: ControlHandle) -> std::io::
             Err(e) => error!("Ошибка приёма соединения на control-сокете: {}", e),
         }
     }
-    Ok(())
 }
 
 fn handle_connection(stream: UnixStream, handle: ControlHandle) {

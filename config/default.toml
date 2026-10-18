@@ -53,8 +53,8 @@ padding_ms = 50
 [control]
 # булево: включён ли интерфейс управления демоном на лету
 enabled = true
-# строка: путь к локальному сокету (Unix) или имя пайпа (Windows)
-socket_path = "/tmp/audio-censor.sock"
+# строка: путь к Unix-сокету управления; пусто — $XDG_RUNTIME_DIR/audio-censor.sock
+socket_path = ""
 
 [logging]
 # строка: уровень логирования ("error" | "warn" | "info" | "debug" | "trace")

@@ -142,6 +142,24 @@ pub struct ControlSettings {
     pub socket_path: String,
 }
 
+const SOCKET_NAME: &str = "audio-censor.sock";
+
+impl ControlSettings {
+    /// Путь к control-сокету: из конфига, а если там пусто — `$XDG_RUNTIME_DIR/audio-censor.sock`.
+    /// XDG_RUNTIME_DIR — личный каталог пользователя с правами 0700, в отличие от общего /tmp
+    pub fn resolved_socket_path(&self) -> Result<PathBuf, String> {
+        if !self.socket_path.is_empty() {
+            return Ok(PathBuf::from(&self.socket_path));
+        }
+        std::env::var_os("XDG_RUNTIME_DIR")
+            .filter(|dir| !dir.is_empty())
+            .map(|dir| PathBuf::from(dir).join(SOCKET_NAME))
+            .ok_or_else(|| {
+                "XDG_RUNTIME_DIR не задан — укажите control.socket_path в конфиге".to_string()
+            })
+    }
+}
+
 #[derive(Deserialize)]
 pub struct LoggingSettings {
     pub level: String,

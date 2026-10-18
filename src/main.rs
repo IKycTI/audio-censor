@@ -1,5 +1,5 @@
 use audio_censor::config::Settings;
-use audio_censor::control::{self, ControlCommand, ControlHandle};
+use audio_censor::control::{ControlCommand, ControlHandle, ControlSocket};
 use audio_censor::logging::{init_logger, logs_to_file};
 use audio_censor::pipeline::Orchestrator;
 use audio_censor::{capture, playback};
@@ -7,11 +7,10 @@ use audio_censor::{capture, playback};
 use clap::{Parser, ValueEnum};
 use cpal::SizedSample;
 use dasp::{Sample, sample::Duplex};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 use tracing::{error, info};
 
 #[derive(Parser)]
@@ -59,7 +58,13 @@ fn main() -> ExitCode {
     }
     // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон
     if let Some(cmd) = cli.command {
-        return run_control_client(&settings.control.socket_path, cmd);
+        return match settings.control.resolved_socket_path() {
+            Ok(path) => run_control_client(&path, cmd),
+            Err(err) => {
+                eprintln!("Ошибка control-сокета: {}", err);
+                ExitCode::FAILURE
+            }
+        };
     }
 
     if let Err(err) = settings.check() {
@@ -87,8 +92,22 @@ where
     T: Copy + Sample + Duplex<f32> + SizedSample + Send + 'static,
 {
     info!("Запуск audio-censor");
-    let socket_path = settings.control.socket_path.clone();
-    let enabled = settings.control.enabled;
+
+    // Сокет занимается первым: если демон уже запущен, узнаём об этом до загрузки
+    // модели и открытия устройств
+    let control_socket = if settings.control.enabled {
+        let socket = settings
+            .control
+            .resolved_socket_path()
+            .and_then(|path| ControlSocket::bind(&path));
+        match socket {
+            Ok(socket) => Some(socket),
+            Err(err) => return fatal(format!("Ошибка control-сокета: {}", err)),
+        }
+    } else {
+        None
+    };
+
     let metrics_file = settings.metrics.metrics_file.clone();
     let mut orchestrator = match Orchestrator::<T>::new(settings) {
         Ok(o) => o,
@@ -116,18 +135,14 @@ where
         metrics_file,
     );
 
-    if enabled {
-        thread::spawn(move || {
-            if let Err(e) = control::ipc::run_control_server(&socket_path, control_handle) {
-                error!("Control-сервер завершился с ошибкой: {}", e);
-            }
-        });
-    }
+    let socket_file = control_socket.map(|socket| socket.serve(control_handle));
     info!("audio-censor успешно запущен, для остановки нажмите Ctrl+C");
     orchestrator.run();
 
     info!("Получен сигнал остановки, завершаю обработку хвостов...");
     orchestrator.shutdown();
+    // Удаляем файл сокета, чтобы следующий запуск не принял его за живой демон
+    drop(socket_file);
 
     info!("Завершено");
 
@@ -163,7 +178,7 @@ fn setup_shutdown_signal(running: Arc<AtomicBool>) -> Result<(), ctrlc::Error> {
     })
 }
 
-fn run_control_client(socket_path: &str, cmd: ControlCommand) -> ExitCode {
+fn run_control_client(socket_path: &Path, cmd: ControlCommand) -> ExitCode {
     use std::io::{BufRead, BufReader, Write};
     use std::os::unix::net::UnixStream;
 
@@ -172,7 +187,8 @@ fn run_control_client(socket_path: &str, cmd: ControlCommand) -> ExitCode {
         Err(e) => {
             eprintln!(
                 "Не удалось подключиться к демону по адресу '{}': {} (демон запущен?)",
-                socket_path, e
+                socket_path.display(),
+                e
             );
             return ExitCode::FAILURE;
         }
