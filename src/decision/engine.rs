@@ -5,16 +5,23 @@ use crate::recognition::TimedWord;
 
 pub struct DecisionEngine {
     rules: Rules,
+    min_confidence: f32,
 }
 
 impl DecisionEngine {
-    pub fn new(bad_words: HashSet<String>, max_distance: u64) -> Self {
+    pub fn new(bad_words: HashSet<String>, max_distance: u64, min_confidence: f32) -> Self {
         Self {
             rules: Rules::new(bad_words, max_distance),
+            min_confidence,
         }
     }
 
     pub fn get_interval_ban_time(&self, timed_word: &TimedWord) -> Option<IntervalBanTime> {
+        // Неуверенно распознанное слово — часто шум, «дорисованный» Vosk до похожего слова
+        if timed_word.conf < self.min_confidence {
+            return None;
+        }
+
         if self.rules.is_bad_word(&timed_word.word) {
             Some(IntervalBanTime {
                 start_time: timed_word.start_ms,

@@ -41,6 +41,13 @@ impl Settings {
             ));
         }
 
+        if !(0.0..=1.0).contains(&self.recognition.min_confidence) {
+            return Err(format!(
+                "recognition.min_confidence должно быть в диапазоне 0.0–1.0 (сейчас {})",
+                self.recognition.min_confidence
+            ));
+        }
+
         // Слово должно успеть распознаться, пока его звук лежит в задержке
         if self.buffer.delay_ms <= self.framing.chunk_size_ms {
             warn!(
@@ -84,16 +91,9 @@ pub struct FramingSettings {
 #[derive(Deserialize)]
 pub struct RecognitionSettings {
     pub model_path: String,
-    pub language: Language,
-    pub partial_results: bool,
+    // Пока не реализовано (ERROR.md, шаг 5.5): частичные гипотезы на DecodingState::Running
+    // pub partial_results: bool,
     pub min_confidence: f32,
-    pub case_sensitive: bool,
-}
-
-#[derive(Deserialize)]
-pub enum Language {
-    EN,
-    RU,
 }
 
 #[derive(Deserialize)]

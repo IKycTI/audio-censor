@@ -94,7 +94,11 @@ where
             }
         };
 
-        let engine = DecisionEngine::new(word_dict.words, settings.decision.max_distance);
+        let engine = DecisionEngine::new(
+            word_dict.words,
+            settings.decision.max_distance,
+            settings.recognition.min_confidence,
+        );
 
         // Распознавание — в отдельном потоке, чтобы декодирование Vosk не задерживало выдачу звука
         let dict_reload_req = Arc::new(AtomicBool::new(false));

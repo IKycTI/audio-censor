@@ -75,7 +75,7 @@ fn convert_word_to_timed_word(stream_offset_ms: u64, words: Vec<Word<'_>>) -> Ve
         .map(|w| {
             let start = stream_offset_ms + (w.start * MS_PER_SEC).round() as u64;
             let end = stream_offset_ms + (w.end * MS_PER_SEC).round() as u64;
-            TimedWord::new(w.word, start, end)
+            TimedWord::new(w.word, start, end).with_conf(w.conf)
         })
         .collect()
 }

@@ -3,8 +3,16 @@ use audio_censor::recognition::events::TimedWord;
 use std::collections::HashSet;
 
 fn make_engine(words: &[&'static str], max_distance: u64) -> DecisionEngine {
+    make_engine_with_confidence(words, max_distance, 0.0)
+}
+
+fn make_engine_with_confidence(
+    words: &[&'static str],
+    max_distance: u64,
+    min_confidence: f32,
+) -> DecisionEngine {
     let bad_words: HashSet<String> = words.iter().copied().map(|w| w.to_string()).collect();
-    DecisionEngine::new(bad_words, max_distance)
+    DecisionEngine::new(bad_words, max_distance, min_confidence)
 }
 
 #[test]
@@ -90,11 +98,52 @@ fn multiple_banned_words_produce_multiple_intervals_in_order() {
     );
 }
 
+// ── Шаг 8: min_confidence ──────────────────────────────────────────
+
 #[test]
-fn confidence_field_does_not_affect_decision() {
-    let engine = make_engine(&["дурак"], 0);
-    let low_conf_word = TimedWord::new("дурак", 0, 300);
-    assert!(engine.get_batch_ban_time(&[low_conf_word]).is_some());
+fn zero_min_confidence_bans_any_confidence() {
+    let engine = make_engine_with_confidence(&["дурак"], 0, 0.0);
+    let word = TimedWord::new("дурак", 0, 300).with_conf(0.01);
+    assert!(engine.get_batch_ban_time(&[word]).is_some());
+}
+
+#[test]
+fn word_below_min_confidence_is_not_banned() {
+    let engine = make_engine_with_confidence(&["дурак"], 0, 0.6);
+    let word = TimedWord::new("дурак", 0, 300).with_conf(0.59);
+    assert!(engine.get_batch_ban_time(&[word]).is_none());
+}
+
+#[test]
+fn word_at_min_confidence_is_banned() {
+    // Порог включительный: conf == min_confidence ещё цензурируется
+    let engine = make_engine_with_confidence(&["дурак"], 0, 0.6);
+    let word = TimedWord::new("дурак", 0, 300).with_conf(0.6);
+    assert!(engine.get_batch_ban_time(&[word]).is_some());
+}
+
+#[test]
+fn confidence_defaults_to_full() {
+    // TimedWord::new без with_conf — полная уверенность, порог 1.0 пропускает
+    let engine = make_engine_with_confidence(&["дурак"], 0, 1.0);
+    let word = TimedWord::new("дурак", 0, 300);
+    assert_eq!(word.conf, 1.0);
+    assert!(engine.get_batch_ban_time(&[word]).is_some());
+}
+
+#[test]
+fn min_confidence_filters_only_uncertain_words_in_batch() {
+    let engine = make_engine_with_confidence(&["дурак", "болван"], 0, 0.5);
+    let words = vec![
+        TimedWord::new("дурак", 0, 300).with_conf(0.9),
+        TimedWord::new("болван", 300, 600).with_conf(0.2),
+        TimedWord::new("дурак", 600, 900).with_conf(0.5),
+    ];
+    let result = engine.get_batch_ban_time(&words).unwrap();
+    assert_eq!(
+        result,
+        vec![IntervalBanTime::new(0, 300), IntervalBanTime::new(600, 900)]
+    );
 }
 
 #[test]
