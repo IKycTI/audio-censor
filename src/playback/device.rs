@@ -104,7 +104,7 @@ pub fn show_device() {
 
         if let Ok(config) = device.default_output_config() {
             println!(
-                "\tканалы: {:>2}, частота: {:>6} Hz, формат: {:?}",
+                "\tканалы: {:>2}, частота: {:>6} Гц, формат: {:?}",
                 config.channels(),
                 config.sample_rate(),
                 config.sample_format()

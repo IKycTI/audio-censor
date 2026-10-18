@@ -256,11 +256,11 @@ where
     }
 
     pub fn start_streams(&self) -> Result<(), cpal::PlayStreamError> {
-        info!("Запуск потоков вводы и вывода");
+        info!("Запуск потоков ввода и вывода");
         self.capture_stream.play()?;
-        info!("Поток ввода запушен");
+        info!("Поток ввода запущен");
         self.playback_stream.play()?;
-        info!("Поток вывода запушен");
+        info!("Поток вывода запущен");
         Ok(())
     }
 
@@ -286,7 +286,7 @@ where
             let len_rs = raw_samples.len();
             // 2. Сырые сэмплы (в исходном типе T) — сразу в delay_buffer,
             //    независимо от того, что с ними будет решено дальше
-            trace!("В delay_buffer отправлено {} сырых семплов", len_rs);
+            trace!("В delay_buffer отправлено {} сырых сэмплов", len_rs);
             self.delay_buffer.push(raw_samples);
             self.metrics.stream_duration_ms.store(
                 stream_pos_to_ms(
@@ -299,9 +299,9 @@ where
 
             // 3. Параллельно — конвертация в i16-моно и отправка в поток распознавания
             //    (нарезка на чанки, Vosk и decision engine работают там)
-            trace!("На конвертацию отправлено {} сырых семплов", len_rs);
+            trace!("На конвертацию отправлено {} сырых сэмплов", len_rs);
             let converted = convert_to_i16_mono(raw_samples, self.channels);
-            trace!("Сконвертировано {} семплов", converted.len());
+            trace!("Сконвертировано {} сэмплов", converted.len());
             self.recognition.send(converted);
 
             // 4. Регистрируем интервалы, которые поток распознавания успел найти
@@ -310,7 +310,7 @@ where
             // 5. Забираем из delay_buffer то, что уже "отлежало" delay_ms
             let ready = self.delay_buffer.pop_ready();
             let len_r = ready.len();
-            trace!("Cемлов готово: {}", len_r);
+            trace!("Сэмплов готово: {}", len_r);
 
             if ready.is_empty() {
                 continue;
