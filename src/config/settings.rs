@@ -2,7 +2,7 @@ use serde::Deserialize;
 use std::path::PathBuf;
 use tracing::warn;
 
-use crate::{masking::MaskingStrategy, ms_to_frames};
+use crate::{masking::MaskingStrategy, ms_to_frames, pipeline::OUTPUT_TARGET_FILL_MS};
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -42,6 +42,15 @@ impl Settings {
             return Err(format!(
                 "recognition.min_confidence должно быть в диапазоне 0.0–1.0 (сейчас {})",
                 self.recognition.min_confidence
+            ));
+        }
+
+        // Выходной буфер должен вмещать цель компенсации дрейфа с запасом в обе стороны
+        if (self.buffer.ring_capacity_ms as u64) < 2 * OUTPUT_TARGET_FILL_MS {
+            return Err(format!(
+                "buffer.ring_capacity_ms должно быть не меньше {} (сейчас {})",
+                2 * OUTPUT_TARGET_FILL_MS,
+                self.buffer.ring_capacity_ms
             ));
         }
 

@@ -26,7 +26,7 @@ use crate::{
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
     metrics::Metrics,
     ms_to_stream_pos,
-    pipeline::RecognitionWorker,
+    pipeline::{DriftCompensator, DriftCorrection, OUTPUT_TARGET_FILL_MS, RecognitionWorker},
     playback,
     recognition::SpeechRecognizer,
     whole_frames,
@@ -34,6 +34,10 @@ use crate::{
 
 // Сколько звука забирать из входного буфера за одну итерацию цикла
 const RAW_READ_BUF_MS: u64 = 100;
+// Как часто при завершении проверять, освободилось ли место в выходном буфере
+const OUTPUT_POLL_INTERVAL: Duration = Duration::from_millis(5);
+// Сколько ждать после опустошения выходного буфера, пока доиграет буфер устройства
+const DEVICE_DRAIN_WAIT: Duration = Duration::from_millis(200);
 
 pub struct Orchestrator<T>
 where
@@ -44,8 +48,11 @@ where
     recognition: RecognitionWorker,
     delay_buffer: DelayBuffer<T>,
     masker: Masker<T>,
+    drift: DriftCompensator,
     capture_stream: Stream,
     playback_stream: Stream,
+    count_underruns: Arc<AtomicBool>,
+    sample_rate: u32,
     channels: u16,
     running: Arc<AtomicBool>,
     dict_reload_req: Arc<AtomicBool>,
@@ -201,11 +208,13 @@ where
             }
         };
 
+        let count_underruns = Arc::new(AtomicBool::new(true));
         let output_stream = match playback::build_playback_stream(
             output_device,
             output_config,
             output_consumer,
             Arc::clone(&metrics),
+            Arc::clone(&count_underruns),
         ) {
             Ok(stream) => stream,
             Err(e) => {
@@ -219,8 +228,15 @@ where
             recognition,
             delay_buffer,
             masker,
+            drift: DriftCompensator::new(
+                OUTPUT_TARGET_FILL_MS,
+                settings.audio.sample_rate,
+                settings.audio.channels,
+            ),
             capture_stream: input_stream,
             playback_stream: output_stream,
+            count_underruns,
+            sample_rate: settings.audio.sample_rate,
             channels: settings.audio.channels,
             running: Arc::new(AtomicBool::new(true)),
             dict_reload_req,
@@ -257,6 +273,8 @@ where
                     words_censored = snap.words_censored,
                     recognizer_errors = snap.recognizer_errors,
                     late_intervals = snap.late_intervals,
+                    drift_dropped = snap.drift_dropped_frames,
+                    drift_inserted = snap.drift_inserted_frames,
                     "метрики"
                 );
                 self.last_metrics_export = Instant::now();
@@ -299,9 +317,31 @@ where
 
             // 6. Применяем маску (или passthrough) к готовым сэмплам
             debug!("Применение маски...");
-            let processed = self.masker.process(&ready);
+            let mut processed = self.masker.process(&ready);
 
-            // 7. Отдаём обработанные сэмплы в output ring buffer
+            // 7. Компенсация дрейфа часов: держим заполненность выходного буфера около цели
+            let fill = self.producer.occupied_len();
+            match self.drift.adjust(&mut processed, fill, T::EQUILIBRIUM) {
+                DriftCorrection::None => {}
+                DriftCorrection::Prefilled(frames) => {
+                    info!("Выходной буфер пуст: добавлено {} кадров тишины", frames);
+                    self.metrics
+                        .drift_inserted_frames
+                        .fetch_add(frames as u64, Ordering::Relaxed);
+                }
+                DriftCorrection::DroppedFrame => {
+                    self.metrics
+                        .drift_dropped_frames
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+                DriftCorrection::DuplicatedFrame => {
+                    self.metrics
+                        .drift_inserted_frames
+                        .fetch_add(1, Ordering::Relaxed);
+                }
+            }
+
+            // 8. Отдаём обработанные сэмплы в output ring buffer
             push_output(&mut self.producer, &self.metrics, self.channels, &processed);
         }
     }
@@ -333,15 +373,33 @@ where
 
         // 5. Дожать хвост delay_buffer — все сэмплы, включая те, что не отлежали полный delay_ms
         //    (finish потребляет delay_buffer)
+        //    Хвост — до delay_ms звука, он может не влезть в выходной буфер целиком,
+        //    поэтому пишем порциями по мере того, как playback освобождает место
         let tail_samples = self.delay_buffer.finish();
         if !tail_samples.is_empty() {
             let processed = self.masker.process(&tail_samples);
-            push_output(&mut self.producer, &self.metrics, self.channels, &processed);
+            let tail_duration = Duration::from_millis(
+                processed.len() as u64 * 1000 / (self.sample_rate as u64 * self.channels as u64),
+            );
+            push_output_blocking(
+                &mut self.producer,
+                &self.metrics,
+                self.channels,
+                &processed,
+                tail_duration + self.output_drain_wait,
+            );
         }
 
-        // 6. Дать playback-потоку время доиграть то, что осталось в output ring buffer,
+        // 6. Дать playback-потоку доиграть то, что осталось в output ring buffer,
         //    прежде чем останавливать сам playback-поток
-        thread::sleep(self.output_drain_wait);
+        let drain_start = Instant::now();
+        while self.producer.occupied_len() > 0 && drain_start.elapsed() < self.output_drain_wait {
+            thread::sleep(OUTPUT_POLL_INTERVAL);
+        }
+        // Всё доиграно: дальше колбэк получает пустой буфер намеренно, это не потери
+        self.count_underruns.store(false, Ordering::Relaxed);
+        // Последняя порция ещё звучит в буфере самого устройства
+        thread::sleep(DEVICE_DRAIN_WAIT);
 
         if let Err(e) = self.playback_stream.pause() {
             error!("Не удалось остановить выходной поток: {}", e);
@@ -445,6 +503,38 @@ impl fmt::Display for OrchestratorError {
 }
 
 impl std::error::Error for OrchestratorError {}
+
+/// Записать всё в выходной буфер, дожидаясь свободного места (только при завершении:
+/// в рабочем цикле блокироваться нельзя). Что не влезло за `timeout`, считается потерянным
+fn push_output_blocking<T>(
+    producer: &mut HeapProd<T>,
+    metrics: &Metrics,
+    channels: u16,
+    data: &[T],
+    timeout: Duration,
+) where
+    T: Copy,
+{
+    let start = Instant::now();
+    let mut rest = data;
+    while !rest.is_empty() {
+        let fits = whole_frames(producer.vacant_len().min(rest.len()), channels);
+        let pushed = producer.push_slice(&rest[..fits]);
+        rest = &rest[pushed..];
+
+        if rest.is_empty() {
+            break;
+        }
+        if start.elapsed() >= timeout {
+            error!("Не удалось доиграть хвост: потеряно {} сэмплов", rest.len());
+            metrics
+                .dropped_output_samples
+                .fetch_add(rest.len() as u64, Ordering::Relaxed);
+            break;
+        }
+        thread::sleep(OUTPUT_POLL_INTERVAL);
+    }
+}
 
 fn push_output<T>(producer: &mut HeapProd<T>, metrics: &Metrics, channels: u16, processed: &[T])
 where

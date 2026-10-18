@@ -5,11 +5,13 @@ use std::sync::atomic::{AtomicU64, Ordering};
 pub struct Metrics {
     pub dropped_input_samples: AtomicU64, // capture: буфер был полон
     pub dropped_output_samples: AtomicU64, // orchestrator: не успели записать в output buffer
-    pub underrun_samples: AtomicU64,      // playback: не хватило данных, отдана тишина
-    pub words_recognized: AtomicU64,      // сколько слов всего распознано
-    pub words_censored: AtomicU64,        // сколько слов реально попало под цензуру
-    pub recognizer_errors: AtomicU64,     // сбои accept_waveform/result
-    pub late_intervals: AtomicU64,        // опаздывающие интервалы
+    pub underrun_samples: AtomicU64, // playback: не хватило данных, отдана тишина (без старта и завершения)
+    pub words_recognized: AtomicU64, // сколько слов всего распознано
+    pub words_censored: AtomicU64,   // сколько слов реально попало под цензуру
+    pub recognizer_errors: AtomicU64, // сбои accept_waveform/result
+    pub late_intervals: AtomicU64,   // опаздывающие интервалы
+    pub drift_dropped_frames: AtomicU64, // дрейф часов: выброшено кадров на выходе
+    pub drift_inserted_frames: AtomicU64, // дрейф часов и срывы: добавлено кадров (дубли и тишина)
 }
 
 impl Metrics {
@@ -22,6 +24,8 @@ impl Metrics {
             words_censored: self.words_censored.load(Ordering::Relaxed),
             recognizer_errors: self.recognizer_errors.load(Ordering::Relaxed),
             late_intervals: self.late_intervals.load(Ordering::Relaxed),
+            drift_dropped_frames: self.drift_dropped_frames.load(Ordering::Relaxed),
+            drift_inserted_frames: self.drift_inserted_frames.load(Ordering::Relaxed),
         }
     }
 
@@ -45,4 +49,6 @@ pub struct MetricsSnapshot {
     pub words_censored: u64,
     pub recognizer_errors: u64,
     pub late_intervals: u64,
+    pub drift_dropped_frames: u64,
+    pub drift_inserted_frames: u64,
 }
