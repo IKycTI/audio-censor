@@ -24,6 +24,12 @@ pub fn ms_to_stream_pos(ms: u64, sample_rate: u32, channels: u16) -> u64 {
     ms_to_frames(ms, sample_rate) * channels as u64
 }
 
+/// Позиция в потоке чередующихся сэмплов → миллисекунды от начала потока, с округлением вниз.
+/// Обратна `ms_to_stream_pos` с точностью до кадра
+pub fn stream_pos_to_ms(pos: u64, sample_rate: u32, channels: u16) -> u64 {
+    pos / channels as u64 * MS_PER_SEC as u64 / sample_rate as u64
+}
+
 /// Длина, урезанная до целого числа кадров. Поток чередующихся сэмплов можно резать
 /// только по границе кадра: потеря части кадра сдвигает каналы во всём остальном потоке
 pub fn whole_frames(len: usize, channels: u16) -> usize {
