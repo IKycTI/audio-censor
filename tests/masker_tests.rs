@@ -428,6 +428,15 @@ fn stereo_last_frame_of_word_decides_late() {
     );
 }
 
+#[test]
+fn output_position_ms_tracks_processed_samples() {
+    let mut m: Masker<f32> = Masker::new(Box::new(Silence::new()), 0, CD_RATE, STEREO);
+    assert_eq!(m.output_position_ms(), 0);
+    // 3000 мс стерео 44100 Гц = позиции 0..264600
+    m.process(&batch(0, 264600, ORIG));
+    assert_eq!(m.output_position_ms(), 3000);
+}
+
 // ── Известные ошибки (см. ERROR.md) ────────────────────────────────
 
 #[test]

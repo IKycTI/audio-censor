@@ -2,7 +2,9 @@ use std::marker::PhantomData;
 
 use dasp::{Sample, sample::Duplex};
 
-use crate::{decision::IntervalBanTime, masking::strategies::*, ms_to_stream_pos};
+use crate::{
+    decision::IntervalBanTime, masking::strategies::*, ms_to_stream_pos, stream_pos_to_ms,
+};
 
 const DEFAULT_FADE_MS: u64 = 5;
 
@@ -82,6 +84,11 @@ where
             active_intervals: Vec::new(),
             _marker: PhantomData,
         }
+    }
+
+    /// Сколько миллисекунд потока уже выдано на выход — всё, что раньше, замаскировать нельзя
+    pub fn output_position_ms(&self) -> u64 {
+        stream_pos_to_ms(self.next_pos, self.sample_rate, self.channels)
     }
 
     pub fn add_interval(&mut self, interval: &IntervalBanTime) -> IntervalTiming {

@@ -22,6 +22,11 @@ impl<T: Copy> DelayBuffer<T> {
         }
     }
 
+    /// Сколько сэмплов принято с начала потока — позиция «сейчас» на входе
+    pub fn input_position(&self) -> u64 {
+        self.next_pos
+    }
+
     pub fn push(&mut self, samples: &[T]) {
         self.samples.extend(samples.iter().copied());
         self.next_pos += samples.len() as u64;

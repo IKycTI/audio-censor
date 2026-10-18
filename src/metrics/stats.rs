@@ -12,10 +12,26 @@ pub struct Metrics {
     pub late_intervals: AtomicU64,   // опаздывающие интервалы
     pub drift_dropped_frames: AtomicU64, // дрейф часов: выброшено кадров на выходе
     pub drift_inserted_frames: AtomicU64, // дрейф часов и срывы: добавлено кадров (дубли и тишина)
+    // Задержка распознавания запрещённых слов: от конца слова до регистрации интервала, мс потока
+    recognition_latency_count: AtomicU64,
+    recognition_latency_sum_ms: AtomicU64,
+    recognition_latency_max_ms: AtomicU64,
 }
 
 impl Metrics {
+    /// Учесть задержку распознавания одного запрещённого слова
+    pub fn record_recognition_latency(&self, latency_ms: u64) {
+        self.recognition_latency_count
+            .fetch_add(1, Ordering::Relaxed);
+        self.recognition_latency_sum_ms
+            .fetch_add(latency_ms, Ordering::Relaxed);
+        self.recognition_latency_max_ms
+            .fetch_max(latency_ms, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
+        let latency_count = self.recognition_latency_count.load(Ordering::Relaxed);
+        let latency_sum = self.recognition_latency_sum_ms.load(Ordering::Relaxed);
         MetricsSnapshot {
             dropped_input_samples: self.dropped_input_samples.load(Ordering::Relaxed),
             dropped_output_samples: self.dropped_output_samples.load(Ordering::Relaxed),
@@ -26,6 +42,11 @@ impl Metrics {
             late_intervals: self.late_intervals.load(Ordering::Relaxed),
             drift_dropped_frames: self.drift_dropped_frames.load(Ordering::Relaxed),
             drift_inserted_frames: self.drift_inserted_frames.load(Ordering::Relaxed),
+            recognition_latency_samples: latency_count,
+            // Пока нет ни одного слова — null, а не 0: ноль выглядел бы как мгновенное распознавание
+            recognition_latency_avg_ms: (latency_count > 0).then(|| latency_sum / latency_count),
+            recognition_latency_max_ms: (latency_count > 0)
+                .then(|| self.recognition_latency_max_ms.load(Ordering::Relaxed)),
         }
     }
 
@@ -51,4 +72,7 @@ pub struct MetricsSnapshot {
     pub late_intervals: u64,
     pub drift_dropped_frames: u64,
     pub drift_inserted_frames: u64,
+    pub recognition_latency_samples: u64,
+    pub recognition_latency_avg_ms: Option<u64>,
+    pub recognition_latency_max_ms: Option<u64>,
 }

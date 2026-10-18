@@ -244,3 +244,14 @@ fn stereo_delay_matches_configured_time() {
     buf.push(&one_second);
     assert_eq!(buf.pop_ready().len(), one_second.len());
 }
+
+#[test]
+fn input_position_counts_all_pushed_samples() {
+    let mut buf = DelayBuffer::new(5, SAMPLE_RATE, STEREO);
+    assert_eq!(buf.input_position(), 0);
+    buf.push(&[0i16; 6]);
+    buf.push(&[0i16; 8]);
+    // Выдача из задержки не меняет позицию входа
+    buf.pop_ready();
+    assert_eq!(buf.input_position(), 14);
+}

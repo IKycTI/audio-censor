@@ -29,7 +29,7 @@ use crate::{
     pipeline::{DriftCompensator, DriftCorrection, OUTPUT_TARGET_FILL_MS, RecognitionWorker},
     playback,
     recognition::SpeechRecognizer,
-    whole_frames,
+    stream_pos_to_ms, whole_frames,
 };
 
 // Сколько звука забирать из входного буфера за одну итерацию цикла
@@ -276,6 +276,8 @@ where
                     words_censored = snap.words_censored,
                     recognizer_errors = snap.recognizer_errors,
                     late_intervals = snap.late_intervals,
+                    latency_avg_ms = snap.recognition_latency_avg_ms,
+                    latency_max_ms = snap.recognition_latency_max_ms,
                     drift_dropped = snap.drift_dropped_frames,
                     drift_inserted = snap.drift_inserted_frames,
                     "метрики"
@@ -371,7 +373,7 @@ where
         // 3–4. Закрыть канал распознавания: поток дожимает хвост чанкера и незавершённую
         //      фразу, после join забираем последние интервалы (finish потребляет поток)
         let last_intervals = self.recognition.finish();
-        register_intervals(&mut self.masker, &self.metrics, last_intervals);
+        register_intervals(&mut self.masker, &self.metrics, last_intervals, None);
 
         // 5. Дожать хвост delay_buffer — все сэмплы, включая те, что не отлежали полный delay_ms
         //    (finish потребляет delay_buffer)
@@ -437,7 +439,15 @@ where
     }
     fn add_ready_intervals(&mut self) {
         let intervals = self.recognition.try_recv_intervals();
-        register_intervals(&mut self.masker, &self.metrics, intervals);
+        if intervals.is_empty() {
+            return;
+        }
+        let input_ms = stream_pos_to_ms(
+            self.delay_buffer.input_position(),
+            self.sample_rate,
+            self.channels,
+        );
+        register_intervals(&mut self.masker, &self.metrics, intervals, Some(input_ms));
     }
 }
 
@@ -547,19 +557,38 @@ where
     }
 }
 
-fn register_intervals<T>(masker: &mut Masker<T>, metrics: &Metrics, intervals: Vec<IntervalBanTime>)
-where
+/// Зарегистрировать интервалы в маске и учесть их своевременность.
+/// `input_ms` — сколько мс звука уже принято на входе; `None` при завершении: там последние
+/// слова выдаёт принудительный `recognizer.finish()`, и задержка распознавания не показательна
+fn register_intervals<T>(
+    masker: &mut Masker<T>,
+    metrics: &Metrics,
+    intervals: Vec<IntervalBanTime>,
+    input_ms: Option<u64>,
+) where
     T: Copy + Sample + Duplex<f32>,
 {
     for interval in intervals {
+        let latency_ms = input_ms.map(|now| now.saturating_sub(interval.end_time));
+        if let Some(latency) = latency_ms {
+            metrics.record_recognition_latency(latency);
+        }
+
+        // Позиция выхода — до регистрации: после неё маска уже учитывает интервал
+        let output_ms = masker.output_position_ms();
         let timing = masker.add_interval(&interval);
         if timing.is_late() {
             // Главный показатель того, хватает ли delay_ms на распознавание
             metrics.late_intervals.fetch_add(1, Ordering::Relaxed);
+            // Чтобы слово заглушилось целиком, выход должен был отставать
+            // ещё на столько: тогда начало слова было бы ещё в задержке
+            let missing_delay_ms = output_ms.saturating_sub(interval.start_time);
             warn!(
                 start_ms = interval.start_time,
                 end_ms = interval.end_time,
                 ?timing,
+                latency_ms,
+                missing_delay_ms,
                 "Интервал опоздал: слово уже прозвучало"
             );
         }
