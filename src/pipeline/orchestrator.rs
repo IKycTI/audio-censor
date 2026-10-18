@@ -24,7 +24,7 @@ use crate::{
     decision::{DecisionEngine, DetectedInterval},
     framing::{Chunker, convert_to_i16_mono},
     masking::{Beep, Masker, Masking, MaskingStrategy, MuteAttenuate, Silence},
-    metrics::Metrics,
+    metrics::{Metrics, MetricsSnapshot},
     ms_to_stream_pos,
     pipeline::{DriftCompensator, DriftCorrection, OUTPUT_TARGET_FILL_MS, RecognitionWorker},
     playback,
@@ -272,23 +272,7 @@ where
                 && let Some(interval) = self.metrics_export_interval
                 && self.last_metrics_export.elapsed() >= interval
             {
-                let snap = self.metrics.snapshot();
-                info!(
-                    dropped_input = snap.dropped_input_samples,
-                    dropped_output = snap.dropped_output_samples,
-                    underruns = snap.underrun_samples,
-                    words_recognized = snap.words_recognized,
-                    words_censored = snap.words_censored,
-                    recognizer_errors = snap.recognizer_errors,
-                    late_intervals = snap.late_intervals,
-                    partial_intervals = snap.partial_intervals,
-                    unconfirmed_partial = snap.unconfirmed_partial_intervals,
-                    latency_avg_ms = snap.recognition_latency_avg_ms,
-                    latency_max_ms = snap.recognition_latency_max_ms,
-                    drift_dropped = snap.drift_dropped_frames,
-                    drift_inserted = snap.drift_inserted_frames,
-                    "метрики"
-                );
+                log_metrics(&self.metrics.snapshot(), "метрики");
                 self.last_metrics_export = Instant::now();
             }
             // 1. Читаем всё, что успело накопиться в input ring buffer
@@ -358,6 +342,11 @@ where
     }
 
     pub fn shutdown(mut self) {
+        // Дальше выходной буфер неизбежно пустеет: пока поток распознавания дожимает
+        // последние слова, хвост задержки выводить нельзя. Это обрыв при остановке,
+        // а не потери в работе — в underrun_samples его не считаем
+        self.count_underruns.store(false, Ordering::Relaxed);
+
         // 1. Остановить приём новых данных — дальше в input ring buffer ничего не добавится
         if let Err(e) = self.capture_stream.pause() {
             error!("Не удалось остановить входной поток: {}", e);
@@ -407,8 +396,6 @@ where
         while self.producer.occupied_len() > 0 && drain_start.elapsed() < self.output_drain_wait {
             thread::sleep(OUTPUT_POLL_INTERVAL);
         }
-        // Всё доиграно: дальше колбэк получает пустой буфер намеренно, это не потери
-        self.count_underruns.store(false, Ordering::Relaxed);
         // Последняя порция ещё звучит в буфере самого устройства
         thread::sleep(DEVICE_DRAIN_WAIT);
 
@@ -416,9 +403,9 @@ where
             error!("Не удалось остановить выходной поток: {}", e);
         }
 
-        info!(
-            dropped_output_samples = self.metrics.dropped_output_samples.load(Ordering::Relaxed),
-            "Оркестратор остановлен"
+        log_metrics(
+            &self.metrics.snapshot(),
+            "Оркестратор остановлен, итоговые метрики",
         );
 
         // 7. Выгрузить итоговые метрики — после всех дренажей, чтобы счётчики были окончательными
@@ -516,6 +503,26 @@ impl fmt::Display for OrchestratorError {
 }
 
 impl std::error::Error for OrchestratorError {}
+
+fn log_metrics(snap: &MetricsSnapshot, message: &str) {
+    info!(
+        dropped_input = snap.dropped_input_samples,
+        dropped_output = snap.dropped_output_samples,
+        underruns = snap.underrun_samples,
+        words_recognized = snap.words_recognized,
+        words_censored = snap.words_censored,
+        recognizer_errors = snap.recognizer_errors,
+        late_intervals = snap.late_intervals,
+        partial_intervals = snap.partial_intervals,
+        unconfirmed_partial = snap.unconfirmed_partial_intervals,
+        latency_avg_ms = snap.recognition_latency_avg_ms,
+        latency_max_ms = snap.recognition_latency_max_ms,
+        drift_dropped = snap.drift_dropped_frames,
+        drift_inserted = snap.drift_inserted_frames,
+        "{}",
+        message
+    );
+}
 
 /// Записать всё в выходной буфер, дожидаясь свободного места (только при завершении:
 /// в рабочем цикле блокироваться нельзя). Что не влезло за `timeout`, считается потерянным
