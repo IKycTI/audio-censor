@@ -135,8 +135,15 @@ impl WorkerState {
         if let Some(tail_chunk) = self.chunker.finish() {
             self.push_chunk(&tail_chunk);
         }
-        let final_words = self.recognizer.finish();
-        self.handle_words(&final_words);
+        match self.recognizer.finish() {
+            Ok(final_words) => self.handle_words(&final_words),
+            Err(e) => {
+                error!("Не удалось получить последнюю фразу: {}", e);
+                self.metrics
+                    .recognizer_errors
+                    .fetch_add(1, Ordering::Relaxed);
+            }
+        }
 
         info!("Поток распознавания остановлен");
     }
@@ -144,7 +151,8 @@ impl WorkerState {
     fn push_chunk(&mut self, chunk: &Chunk) {
         match self.recognizer.push_chunk(chunk) {
             Ok(words) => self.handle_words(&words),
-            Err(_) => {
+            Err(e) => {
+                error!("Ошибка распознавания: {}", e);
                 self.metrics
                     .recognizer_errors
                     .fetch_add(1, Ordering::Relaxed);
@@ -181,10 +189,7 @@ impl WorkerState {
                 self.engine.replace_dictionary(new_dict.words);
                 info!("Словарь перезагружен");
             }
-            Err(OrchestratorError::WordDictError(e)) => {
-                error!("Не удалось перезагрузить словарь: {}", e);
-            }
-            Err(_) => error!("Неопознанная ошибка при перезагрузке словаря"),
+            Err(e) => error!("Не удалось перезагрузить словарь: {}", e),
         }
     }
 }

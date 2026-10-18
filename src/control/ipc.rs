@@ -88,7 +88,13 @@ pub fn run_control_server(socket_path: &str, handle: ControlHandle) -> std::io::
 }
 
 fn handle_connection(stream: UnixStream, handle: ControlHandle) {
-    let reader = BufReader::new(stream.try_clone().expect("clone stream"));
+    let reader = match stream.try_clone() {
+        Ok(s) => BufReader::new(s),
+        Err(e) => {
+            error!("Не удалось подготовить control-соединение: {}", e);
+            return;
+        }
+    };
     let mut writer = stream;
 
     for line in reader.lines() {

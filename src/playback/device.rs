@@ -5,7 +5,7 @@ use cpal::{
 use cpal::{StreamConfig, SupportedStreamConfig};
 
 use crate::config::AudioSettings;
-use tracing::{info, warn};
+use tracing::info;
 
 pub fn get_device(output_device: &str) -> Result<Device, String> {
     let host = cpal::default_host();
@@ -27,10 +27,17 @@ pub fn get_device(output_device: &str) -> Result<Device, String> {
             })
             .next();
     }
-    let device = device.expect("Устройство вывода не найдено");
+    let device = device.ok_or_else(|| {
+        format!(
+            "устройство вывода '{}' не найдено (список устройств: --show-device output)",
+            output_device
+        )
+    })?;
 
-    let device_desc = device.description().ok().unwrap();
-    info!("Используем устройство вывода: {}", device_desc.name());
+    match device.description() {
+        Ok(desc) => info!("Используем устройство вывода: {}", desc.name()),
+        Err(_) => info!("Используем устройство вывода (описание недоступно)"),
+    }
     Ok(device)
 }
 
@@ -56,14 +63,15 @@ pub fn get_config(device: &Device, audio_config: &AudioSettings) -> Result<Strea
             break;
         }
     }
-    let output_config = selected_config
-        .or_else(|| {
-            warn!(
-                "Не удалось найти подходящий конфигурация вывода, используем конфиг по умолчанию"
-            );
-            device.default_output_config().ok()
-        })
-        .ok_or("Не удалось найти подходящий конфигурация вывода".to_string())?;
+    // Без запасного варианта: конфигурация по умолчанию не совпадёт с форматом T,
+    // числом каналов и частотой, под которые собран весь конвейер
+    let output_config = selected_config.ok_or_else(|| {
+        format!(
+            "устройство не поддерживает формат {:?}, каналов: {}, частоту {} Гц \
+             (параметры устройств: --show-device output)",
+            audio_config.sample_format, audio_config.channels, audio_config.sample_rate
+        )
+    })?;
 
     info!("Найдена конфигурация вывода: {:?}", output_config);
     Ok(output_config.config())
@@ -76,10 +84,10 @@ pub fn show_device() {
     println!(" Устройства вывода звука (колонки, наушники)");
     println!("==================================================");
 
+    // Устройства по умолчанию может не быть — это не повод падать при выводе списка
     let default_output_desc = host
         .default_output_device()
-        .and_then(|device| device.description().ok())
-        .unwrap();
+        .and_then(|device| device.description().ok());
 
     let devices = match host.output_devices() {
         Ok(devices) => devices,
@@ -92,9 +100,13 @@ pub fn show_device() {
     let mut count = 0;
 
     for device in devices {
-        let desc = device.description().ok().unwrap();
+        let Ok(desc) = device.description() else {
+            println!("  [{count:2}] <описание недоступно>");
+            count += 1;
+            continue;
+        };
 
-        let is_default = default_output_desc == desc;
+        let is_default = default_output_desc.as_ref() == Some(&desc);
         let marker = if is_default { "*" } else { " " };
 
         println!("{marker} [{count:2}] {desc}");

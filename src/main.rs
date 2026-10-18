@@ -1,7 +1,7 @@
 use audio_censor::config::Settings;
 use audio_censor::control::{self, ControlCommand, ControlHandle};
 use audio_censor::logging::init_logger;
-use audio_censor::pipeline::{Orchestrator, OrchestratorError};
+use audio_censor::pipeline::Orchestrator;
 use audio_censor::{capture, playback};
 
 use clap::{Parser, ValueEnum};
@@ -44,26 +44,26 @@ fn main() -> ExitCode {
         return ExitCode::SUCCESS;
     }
 
+    // Логгер ещё не инициализирован — ошибку видно только через stderr
     let settings = match Settings::new(cli.config_path) {
         Ok(s) => s,
         Err(err) => {
-            error!("Ошибка получения конфигурации: {}", err);
+            eprintln!("Ошибка получения конфигурации: {}", err);
             return ExitCode::FAILURE;
         }
     };
 
-    init_logger(&settings.logging);
+    if let Err(err) = init_logger(&settings.logging) {
+        eprintln!("Ошибка инициализации логгера: {}", err);
+        return ExitCode::FAILURE;
+    }
     // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон
     if let Some(cmd) = cli.command {
         return run_control_client(&settings.control.socket_path, cmd);
     }
 
-    match settings.check() {
-        Ok(_) => (),
-        Err(err) => {
-            error!("Ошибка конфигурации: {}", err);
-            return ExitCode::FAILURE;
-        }
+    if let Err(err) = settings.check() {
+        return fatal(format!("Ошибка конфигурации: {}", err));
     }
 
     // 3. Если аргументы вообще не переданы — запускаем демона
@@ -78,10 +78,7 @@ fn main() -> ExitCode {
         cpal::SampleFormat::U64 => start::<u64>(settings),
         cpal::SampleFormat::F32 => start::<f32>(settings),
         cpal::SampleFormat::F64 => start::<f64>(settings),
-        other => {
-            error!("Не поддерживаемый формат сэмпла: {other}.");
-            ExitCode::FAILURE
-        }
+        other => fatal(format!("Неподдерживаемый формат сэмпла: {other}")),
     }
 }
 
@@ -95,47 +92,22 @@ where
     let metrics_file = settings.metrics.metrics_file.clone();
     let mut orchestrator = match Orchestrator::<T>::new(settings) {
         Ok(o) => o,
-        Err(err) => {
-            match err {
-                OrchestratorError::WordDictError(e) => error!("Ошибка при загрузке словаря: {}", e),
-                OrchestratorError::CaptureDeviceError(e) => {
-                    error!("Ошибка при получении устройства ввода: {}", e)
-                }
-                OrchestratorError::CaptureConfigError(e) => {
-                    error!("Ошибка при получении конфигурации устройства ввода: {}", e)
-                }
-                OrchestratorError::CaptureStreamError(e) => {
-                    error!("Ошибка при получении потока устройства ввода: {}", e)
-                }
-                OrchestratorError::PlaybackDeviceError(e) => {
-                    error!("Ошибка при получении устройства вывода: {}", e)
-                }
-                OrchestratorError::PlaybackConfigError(e) => {
-                    error!("Ошибка при получении конфигурации устройства вывода: {}", e)
-                }
-                OrchestratorError::PlaybackStreamError(e) => {
-                    error!("Ошибка при получении потока устройства ввода: {}", e)
-                }
-                OrchestratorError::ModelLoadError(e) => error!(e),
-                OrchestratorError::RecognizerError(e) => {
-                    error!("Ошибка при создании распознавателя: {}", e)
-                } // _ => error!("Неизвестная ошибка..."),
-            }
-            return ExitCode::FAILURE;
-        }
+        Err(err) => return fatal(err),
     };
 
-    match orchestrator.start_streams() {
-        Ok(()) => (),
-        Err(err) => {
-            error!("Ошибка запуска потоков: {}", err.to_string());
-            return ExitCode::FAILURE;
-        }
-    };
+    if let Err(err) = orchestrator.start_streams() {
+        return fatal(format!("Ошибка запуска потоков: {}", err));
+    }
 
     let running = orchestrator.running_handle();
 
-    setup_shutdown_signal(running.clone());
+    // Без обработчика демон нельзя корректно остановить: хвосты и метрики не сохранятся
+    if let Err(err) = setup_shutdown_signal(running.clone()) {
+        return fatal(format!(
+            "Не удалось установить обработчик сигнала завершения: {}",
+            err
+        ));
+    }
 
     let control_handle = ControlHandle::new(
         orchestrator.running_handle(),
@@ -163,6 +135,14 @@ where
     ExitCode::SUCCESS
 }
 
+/// Фатальная ошибка запуска: в лог и в stderr. Лог может писаться в файл,
+/// и без stderr пользователь в терминале увидел бы только код возврата
+fn fatal(message: impl std::fmt::Display) -> ExitCode {
+    error!("{}", message);
+    eprintln!("{}", message);
+    ExitCode::FAILURE
+}
+
 fn show_device(filter: DeviceFilter) {
     match filter {
         DeviceFilter::Input => capture::show_device(),
@@ -175,12 +155,11 @@ fn show_device(filter: DeviceFilter) {
     }
 }
 
-fn setup_shutdown_signal(running: Arc<AtomicBool>) {
+fn setup_shutdown_signal(running: Arc<AtomicBool>) -> Result<(), ctrlc::Error> {
     ctrlc::set_handler(move || {
         info!("Получен сигнал завершения (Ctrl+C / SIGTERM)");
         running.store(false, Ordering::Relaxed);
     })
-    .expect("Не удалось установить обработчик сигнала завершения");
 }
 
 fn run_control_client(socket_path: &str, cmd: ControlCommand) -> ExitCode {

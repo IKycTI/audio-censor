@@ -1,4 +1,5 @@
 use std::{
+    fmt,
     sync::{
         Arc,
         atomic::{AtomicBool, Ordering},
@@ -397,6 +398,7 @@ pub(crate) fn load_banned_words(dict_path: &str) -> Result<BanSet, OrchestratorE
     };
 }
 
+#[derive(Debug)]
 pub enum OrchestratorError {
     WordDictError(String),
     CaptureDeviceError(String),
@@ -408,6 +410,46 @@ pub enum OrchestratorError {
     ModelLoadError(String),
     RecognizerError(String),
 }
+
+impl fmt::Display for OrchestratorError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            OrchestratorError::WordDictError(e) => write!(f, "Ошибка при загрузке словаря: {}", e),
+            OrchestratorError::CaptureDeviceError(e) => {
+                write!(f, "Ошибка при получении устройства ввода: {}", e)
+            }
+            OrchestratorError::CaptureConfigError(e) => {
+                write!(
+                    f,
+                    "Ошибка при получении конфигурации устройства ввода: {}",
+                    e
+                )
+            }
+            OrchestratorError::CaptureStreamError(e) => {
+                write!(f, "Ошибка при создании потока устройства ввода: {}", e)
+            }
+            OrchestratorError::PlaybackDeviceError(e) => {
+                write!(f, "Ошибка при получении устройства вывода: {}", e)
+            }
+            OrchestratorError::PlaybackConfigError(e) => {
+                write!(
+                    f,
+                    "Ошибка при получении конфигурации устройства вывода: {}",
+                    e
+                )
+            }
+            OrchestratorError::PlaybackStreamError(e) => {
+                write!(f, "Ошибка при создании потока устройства вывода: {}", e)
+            }
+            OrchestratorError::ModelLoadError(e) => write!(f, "{}", e),
+            OrchestratorError::RecognizerError(e) => {
+                write!(f, "Ошибка при создании распознавателя: {}", e)
+            }
+        }
+    }
+}
+
+impl std::error::Error for OrchestratorError {}
 
 fn push_output<T>(producer: &mut HeapProd<T>, metrics: &Metrics, channels: u16, processed: &[T])
 where

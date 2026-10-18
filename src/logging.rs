@@ -7,34 +7,42 @@ use tracing_subscriber::{EnvFilter, fmt};
 
 static LOGGER_INIT: Once = Once::new();
 
-/// Инициализирует глобальный логгер.
-///
-/// Приоритет источника пути к файлу:
-/// 1. Аргумент `log_file`
-/// 2. Переменная окружения `LOG_FILE`
-/// 3. stdout (если ни один не задан)
-///
-/// Уровень логирования берётся из `LOG_LEVEL` (по умолчанию "info").
-pub fn init_logger(settings: &LoggingSettings) {
-    LOGGER_INIT.call_once(|| {
-        let env_filter = EnvFilter::try_new(settings.level.clone()).unwrap();
+/// Инициализирует глобальный логгер по секции `[logging]` конфига:
+/// уровень — `level`, вывод — в файл `file_path` или в stdout, если путь пуст.
+/// Повторные вызовы ничего не делают.
+pub fn init_logger(settings: &LoggingSettings) -> Result<(), String> {
+    let mut result = Ok(());
+    LOGGER_INIT.call_once(|| result = try_init_logger(settings));
+    result
+}
 
-        if settings.file_path != "" {
-            // Создаём директорию, если нужно
-            if let Some(parent) = Path::new(&settings.file_path).parent() {
-                fs::create_dir_all(parent).expect("Не удалось создать директорию для логов");
-            }
-            // Лог в файл
-            let file = File::create(&settings.file_path).expect("Не удалось создать файл лога");
-            fmt()
-                .with_writer(file)
-                .with_env_filter(env_filter)
-                .with_ansi(false)
-                .init();
-        } else {
-            // Лог в stdout в компактном формате
-            fmt().with_env_filter(env_filter).compact().init();
+fn try_init_logger(settings: &LoggingSettings) -> Result<(), String> {
+    let env_filter = EnvFilter::try_new(&settings.level)
+        .map_err(|e| format!("неверный logging.level '{}': {}", settings.level, e))?;
+
+    if !settings.file_path.is_empty() {
+        // Создаём директорию, если нужно
+        if let Some(parent) = Path::new(&settings.file_path).parent() {
+            fs::create_dir_all(parent).map_err(|e| {
+                format!(
+                    "не удалось создать директорию для логов {}: {}",
+                    parent.display(),
+                    e
+                )
+            })?;
         }
-        info!("Логгер инициализирован");
-    });
+        // Лог в файл
+        let file = File::create(&settings.file_path)
+            .map_err(|e| format!("не удалось создать файл лога {}: {}", settings.file_path, e))?;
+        fmt()
+            .with_writer(file)
+            .with_env_filter(env_filter)
+            .with_ansi(false)
+            .init();
+    } else {
+        // Лог в stdout в компактном формате
+        fmt().with_env_filter(env_filter).compact().init();
+    }
+    info!("Логгер инициализирован");
+    Ok(())
 }

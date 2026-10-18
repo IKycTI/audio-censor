@@ -1,4 +1,6 @@
-use tracing::{error, info};
+use std::fmt;
+
+use tracing::info;
 use vosk::{DecodingState, Model, Recognizer, Word};
 
 use crate::{MS_PER_SEC, framing::Chunk, recognition::TimedWord};
@@ -29,13 +31,14 @@ impl SpeechRecognizer {
         match accept_res {
             Ok(res) => match res {
                 DecodingState::Finalized => {
-                    info!("Чанк добален, слова были распознаны");
+                    info!("Чанк добавлен, слова были распознаны");
 
+                    // single() даёт None, только если включены альтернативы (set_max_alternatives)
                     let words = self
                         .recognizer
                         .result()
                         .single()
-                        .expect("При получении результатов Vosk произошла ошибка");
+                        .ok_or(RecognizerError::UnexpectedResult)?;
 
                     Ok(convert_word_to_timed_word(
                         self.stream_offset_ms,
@@ -46,26 +49,24 @@ impl SpeechRecognizer {
                     info!("Чанк добавлен, слова не распознаны");
                     Ok(Vec::new())
                 }
-                DecodingState::Failed => {
-                    error!("Не удалось добавить чанк");
-                    return Err(RecognizerError::DecodingFailed);
-                }
+                // Ошибку логирует вызывающий (поток распознавания) — через Display
+                DecodingState::Failed => Err(RecognizerError::DecodingFailed),
             },
-            Err(err) => {
-                error!("Ошибка придобавлении чанка: {}", err.to_string());
-                return Err(RecognizerError::AcceptError(err.to_string()));
-            }
+            Err(err) => Err(RecognizerError::AcceptError(err.to_string())),
         }
     }
 
-    pub fn finish(&mut self) -> Vec<TimedWord> {
+    pub fn finish(&mut self) -> Result<Vec<TimedWord>, RecognizerError> {
         let words = self
             .recognizer
             .final_result()
             .single()
-            .expect("При получении результатов Vosk произошла ошибка");
+            .ok_or(RecognizerError::UnexpectedResult)?;
 
-        convert_word_to_timed_word(self.stream_offset_ms, words.result)
+        Ok(convert_word_to_timed_word(
+            self.stream_offset_ms,
+            words.result,
+        ))
     }
 }
 
@@ -80,7 +81,26 @@ fn convert_word_to_timed_word(stream_offset_ms: u64, words: Vec<Word<'_>>) -> Ve
         .collect()
 }
 
+#[derive(Debug)]
 pub enum RecognizerError {
     DecodingFailed,
     AcceptError(String),
+    UnexpectedResult,
 }
+
+impl fmt::Display for RecognizerError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            RecognizerError::DecodingFailed => write!(f, "Vosk не смог декодировать чанк"),
+            RecognizerError::AcceptError(e) => write!(f, "ошибка при добавлении чанка: {}", e),
+            RecognizerError::UnexpectedResult => {
+                write!(
+                    f,
+                    "Vosk вернул результат с альтернативами вместо одиночного"
+                )
+            }
+        }
+    }
+}
+
+impl std::error::Error for RecognizerError {}

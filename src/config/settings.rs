@@ -23,13 +23,10 @@ impl Settings {
     pub fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
         let path = config_path.unwrap_or_else(|| PathBuf::from(CONFIG_PATH));
 
-        let content = match std::fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(err) => return Err(err.to_string()),
-        };
-        let params: Self = toml::from_str(&content).expect("Ошибка при разборе конфигурации");
+        let content = std::fs::read_to_string(&path)
+            .map_err(|e| format!("не удалось прочитать {}: {}", path.display(), e))?;
 
-        Ok(params)
+        toml::from_str(&content).map_err(|e| format!("ошибка разбора {}: {}", path.display(), e))
     }
 
     pub fn check(&self) -> Result<(), String> {
