@@ -103,3 +103,86 @@ fn max_distance_zero_behaves_as_exact_match_only() {
     let words = vec![TimedWord::new("дурок", 0, 300)];
     assert!(engine.get_batch_ban_time(&words).is_none());
 }
+
+// ── Шаг 8: длина в символах, порог для Левенштейна ─────────────────
+
+fn is_banned(engine: &DecisionEngine, word: &str) -> bool {
+    engine
+        .get_batch_ban_time(&[TimedWord::new(word, 0, 300)])
+        .is_some()
+}
+
+#[test]
+fn short_words_need_exact_match() {
+    // Три кириллические буквы = 6 байт: раньше len() пропускал их к Левенштейну
+    let engine = make_engine(&["три", "раз"], 1);
+    assert!(!is_banned(&engine, "при"));
+    assert!(!is_banned(&engine, "рас"));
+    assert!(is_banned(&engine, "три"));
+    assert!(is_banned(&engine, "раз"));
+}
+
+#[test]
+fn two_letter_words_need_exact_match() {
+    let engine = make_engine(&["да"], 1);
+    assert!(is_banned(&engine, "да"));
+    assert!(!is_banned(&engine, "до"));
+    assert!(!is_banned(&engine, "а"));
+}
+
+#[test]
+fn short_dictionary_word_does_not_match_longer_words() {
+    // Длинное распознанное слово не должно ловиться коротким словом словаря
+    let engine = make_engine(&["три", "раз"], 1);
+    assert!(!is_banned(&engine, "трио"));
+    assert!(!is_banned(&engine, "разы"));
+    assert!(!is_banned(&engine, "трип"));
+}
+
+#[test]
+fn large_max_distance_does_not_apply_to_short_words() {
+    let engine = make_engine(&["кот"], 2);
+    assert!(!is_banned(&engine, "кит"));
+    assert!(!is_banned(&engine, "ток"));
+}
+
+#[test]
+fn long_words_still_match_with_typo() {
+    let engine = make_engine(&["болван"], 1);
+    assert!(is_banned(&engine, "балван"));
+    assert!(is_banned(&engine, "болвана"));
+    assert!(!is_banned(&engine, "балвана"));
+}
+
+// ── Шаг 8: словарь нормализуется один раз ──────────────────────────
+
+#[test]
+fn dictionary_is_normalized_on_load() {
+    let engine = make_engine(&["Дурак!"], 0);
+    assert!(is_banned(&engine, "дурак"));
+}
+
+#[test]
+fn recognized_word_is_normalized() {
+    let engine = make_engine(&["дурак"], 0);
+    assert!(is_banned(&engine, "Дурак,"));
+}
+
+#[test]
+fn replace_dictionary_normalizes_and_replaces() {
+    let mut engine = make_engine(&["дурак"], 0);
+    let new_dict: HashSet<String> = ["БОЛВАН".to_string()].into_iter().collect();
+    engine.replace_dictionary(new_dict);
+
+    assert!(is_banned(&engine, "болван"));
+    assert!(
+        !is_banned(&engine, "дурак"),
+        "старый словарь должен быть заменён"
+    );
+}
+
+#[test]
+fn empty_dictionary_bans_nothing() {
+    let engine = make_engine(&[], 3);
+    assert!(!is_banned(&engine, "дурак"));
+}
