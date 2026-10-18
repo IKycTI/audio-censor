@@ -6,11 +6,11 @@ use audio_censor::{capture, playback};
 
 use clap::{Parser, ValueEnum};
 use cpal::SizedSample;
-use dasp::{sample::Duplex, Sample};
+use dasp::{Sample, sample::Duplex};
 use std::path::PathBuf;
 use std::process::ExitCode;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::thread;
 use tracing::{error, info};
 
@@ -56,6 +56,14 @@ fn main() -> ExitCode {
     // 2. Команда управления запущенным демоном — короткоживущий клиент, не сам демон
     if let Some(cmd) = cli.command {
         return run_control_client(&settings.control.socket_path, cmd);
+    }
+
+    match settings.check() {
+        Ok(_) => (),
+        Err(err) => {
+            error!("Ошибка конфигурации: {}", err);
+            return ExitCode::FAILURE;
+        }
     }
 
     // 3. Если аргументы вообще не переданы — запускаем демона

@@ -1,5 +1,6 @@
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::{path::PathBuf, str::FromStr};
+use tracing::warn;
 
 use crate::masking::MaskingStrategy;
 
@@ -27,7 +28,23 @@ impl Settings {
             Err(err) => return Err(err.to_string()),
         };
         let params: Self = toml::from_str(&content).expect("Ошибка при разборе конфигурации");
+
         Ok(params)
+    }
+
+    pub fn check(&self) -> Result<(), String> {
+        if self.framing.overlap_ms == 0 {
+            return Err(String::from_str("Перекрытие не может быть равно 0").unwrap());
+        }
+
+        if self.buffer.delay_ms > self.framing.chunk_size_ms {
+            warn!(
+                "Внимание задержка больше чем размер чанка({} > {})",
+                self.buffer.delay_ms, self.framing.chunk_size_ms
+            );
+        }
+
+        Ok(())
     }
 }
 
