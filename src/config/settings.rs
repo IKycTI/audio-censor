@@ -1,8 +1,8 @@
 use serde::Deserialize;
-use std::{path::PathBuf, str::FromStr};
+use std::path::PathBuf;
 use tracing::warn;
 
-use crate::masking::MaskingStrategy;
+use crate::{masking::MaskingStrategy, ms_to_frames};
 
 #[derive(Deserialize)]
 pub struct Settings {
@@ -33,13 +33,19 @@ impl Settings {
     }
 
     pub fn check(&self) -> Result<(), String> {
-        if self.framing.overlap_ms == 0 {
-            return Err(String::from_str("Перекрытие не может быть равно 0").unwrap());
+        // Чанк короче одного сэмпла — чанкер не сможет нарезать поток
+        if ms_to_frames(self.framing.chunk_size_ms, self.audio.sample_rate) == 0 {
+            return Err(format!(
+                "framing.chunk_size_ms слишком мал для частоты {} Гц (сейчас {})",
+                self.audio.sample_rate, self.framing.chunk_size_ms
+            ));
         }
 
-        if self.buffer.delay_ms > self.framing.chunk_size_ms {
+        // Слово должно успеть распознаться, пока его звук лежит в задержке
+        if self.buffer.delay_ms <= self.framing.chunk_size_ms {
             warn!(
-                "Внимание задержка больше чем размер чанка({} > {})",
+                "Задержка не больше размера чанка ({} <= {}): слова будут опаздывать, \
+                 следите за метрикой late_intervals",
                 self.buffer.delay_ms, self.framing.chunk_size_ms
             );
         }
@@ -73,7 +79,6 @@ pub struct DecisionSettings {
 #[derive(Deserialize)]
 pub struct FramingSettings {
     pub chunk_size_ms: u64,
-    pub overlap_ms: u64,
 }
 
 #[derive(Deserialize)]

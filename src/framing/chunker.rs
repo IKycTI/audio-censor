@@ -2,35 +2,29 @@ use tracing::info;
 
 use crate::ms_to_frames;
 
+/// Нарезка моно-потока на чанки фиксированного размера, встык.
+/// Перекрытия нет: Vosk — потоковый распознаватель и сам помнит контекст
+/// между чанками, а повторно поданный звук сдвинул бы его таймстемпы
 pub struct Chunker {
     chunk_size_sample: u64,
-    step_samples: u64,
     interval_buffer: Vec<i16>,
-    next_chunk_start_pos: u64,
 }
 
 pub struct Chunk {
     pub data: Vec<i16>,
-    pub start_sample: u64,
 }
 
 impl Chunker {
-    pub fn new(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> Self {
+    pub fn new(chunk_size_ms: u64, sample_rate: u32) -> Self {
         // Чанкер получает моно-поток, поэтому кадр = сэмпл
         let chunk_size_sample = ms_to_frames(chunk_size_ms, sample_rate);
-        let overlap_size_samples = ms_to_frames(overlap_ms, sample_rate);
-
-        let step_samples = chunk_size_sample - overlap_size_samples;
+        assert!(chunk_size_sample > 0, "Размер чанка должен быть больше 0");
 
         info!("Размер чанка: {}", chunk_size_sample);
-        info!("Размер перекрытия чанка: {}", overlap_size_samples);
-        info!("Шаг: {}", step_samples);
 
         Chunker {
             chunk_size_sample,
-            step_samples,
             interval_buffer: Vec::new(),
-            next_chunk_start_pos: 0,
         }
     }
 
@@ -39,17 +33,12 @@ impl Chunker {
         let mut chunk_vec = Vec::<Chunk>::new();
 
         while self.interval_buffer.len() >= self.chunk_size_sample as usize {
-            let chunk_data: Vec<i16> =
-                self.interval_buffer[0..self.chunk_size_sample as usize].to_vec();
-            let chunk_start = self.next_chunk_start_pos;
+            let chunk_data: Vec<i16> = self
+                .interval_buffer
+                .drain(0..self.chunk_size_sample as usize)
+                .collect();
 
-            chunk_vec.push(Chunk {
-                data: chunk_data,
-                start_sample: chunk_start,
-            });
-
-            self.interval_buffer.drain(0..self.step_samples as usize);
-            self.next_chunk_start_pos += self.step_samples;
+            chunk_vec.push(Chunk { data: chunk_data });
         }
         chunk_vec
     }
@@ -63,8 +52,7 @@ impl Chunker {
         let padding_needed = self.chunk_size_sample as usize - len_buf;
         self.interval_buffer.extend(vec![0i16; padding_needed]);
         Some(Chunk {
-            data: self.interval_buffer.to_vec(),
-            start_sample: self.next_chunk_start_pos,
+            data: std::mem::take(&mut self.interval_buffer),
         })
     }
 }

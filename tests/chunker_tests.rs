@@ -21,36 +21,28 @@ fn uneven_split_sizes(total: usize, seed: u64) -> Vec<usize> {
     sizes
 }
 
-/// Сравнивает два набора чанков по данным и стартовой позиции.
+/// Сравнивает два набора чанков по данным.
 fn assert_chunks_eq(a: &[Chunk], b: &[Chunk]) {
     assert_eq!(a.len(), b.len(), "разное количество чанков");
     for (i, (ca, cb)) in a.iter().zip(b.iter()).enumerate() {
-        assert_eq!(
-            ca.start_sample, cb.start_sample,
-            "start_sample различается в чанке #{i}"
-        );
         assert_eq!(ca.data, cb.data, "данные различаются в чанке #{i}");
     }
 }
 
-fn expected_sizes(chunk_size_ms: u64, overlap_ms: u64, sample_rate: u32) -> (usize, usize, usize) {
-    let chunk_size = (chunk_size_ms * sample_rate as u64 / 1000) as usize;
-    let overlap = (overlap_ms * sample_rate as u64 / 1000) as usize;
-    let step = chunk_size - overlap;
-    (chunk_size, overlap, step)
+fn expected_chunk_size(chunk_size_ms: u64, sample_rate: u32) -> usize {
+    (chunk_size_ms * sample_rate as u64 / 1000) as usize
 }
 
 #[test]
 fn chunking_is_independent_of_push_fragmentation() {
     const TOTAL: usize = 10_000;
     const CHUNK_MS: u64 = 100;
-    const OVERLAP_MS: u64 = 20;
     const SAMPLE_RATE: u32 = 1000;
 
     let samples = synth_samples(TOTAL);
 
     // Прогон 1: весь поток одним большим куском.
-    let mut chunker_whole = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let mut chunker_whole = Chunker::new(CHUNK_MS, SAMPLE_RATE);
     let mut chunks_whole = chunker_whole.push_samples(&samples);
     if let Some(tail) = chunker_whole.finish() {
         chunks_whole.push(tail);
@@ -64,7 +56,7 @@ fn chunking_is_independent_of_push_fragmentation() {
         "сплиты должны в сумме давать TOTAL"
     );
 
-    let mut chunker_split = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let mut chunker_split = Chunker::new(CHUNK_MS, SAMPLE_RATE);
     let mut chunks_split = Vec::new();
     let mut offset = 0usize;
     for size in splits {
@@ -84,78 +76,59 @@ fn chunking_is_independent_of_push_fragmentation() {
 }
 
 #[test]
-fn start_sample_grows_strictly_by_step() {
+fn chunks_are_contiguous_without_overlap() {
+    // Vosk получает каждый сэмпл ровно один раз: чанки идут встык, подряд — исходный поток
     const CHUNK_MS: u64 = 100;
-    const OVERLAP_MS: u64 = 25;
     const SAMPLE_RATE: u32 = 1000;
     const TOTAL: usize = 5_000;
 
-    let (_, _, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
-
-    let mut chunker = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let chunk_size = expected_chunk_size(CHUNK_MS, SAMPLE_RATE);
+    let mut chunker = Chunker::new(CHUNK_MS, SAMPLE_RATE);
     let samples = synth_samples(TOTAL);
     let chunks = chunker.push_samples(&samples);
 
-    assert!(
-        chunks.len() >= 2,
-        "нужно хотя бы 2 чанка, чтобы проверить рост start_sample"
-    );
+    assert_eq!(chunks.len(), TOTAL / chunk_size);
+    assert!(chunks.iter().all(|c| c.data.len() == chunk_size));
 
-    for pair in chunks.windows(2) {
-        let diff = pair[1].start_sample - pair[0].start_sample;
-        assert_eq!(
-            diff, step as u64,
-            "start_sample должен расти строго на step_samples ({step})"
-        );
-    }
+    let joined: Vec<i16> = chunks.iter().flat_map(|c| c.data.iter().copied()).collect();
+    assert_eq!(joined, samples);
 }
 
 #[test]
-fn overlap_between_consecutive_chunks_matches_byte_for_byte() {
-    const CHUNK_MS: u64 = 200;
-    const OVERLAP_MS: u64 = 50;
-    const SAMPLE_RATE: u32 = 1000;
-    const TOTAL: usize = 8_000;
+fn chunk_size_rounds_down_to_whole_samples() {
+    // 10 мс при 44100 Гц = 441 сэмпл, 1 мс = 44.1 → 44
+    let mut chunker = Chunker::new(10, 44100);
+    let chunks = chunker.push_samples(&synth_samples(441 * 2));
+    assert_eq!(chunks.len(), 2);
+    assert!(chunks.iter().all(|c| c.data.len() == 441));
 
-    let (chunk_size, overlap, _) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
-    assert!(overlap > 0, "тест рассчитан на ненулевой overlap");
+    let mut chunker = Chunker::new(1, 44100);
+    let chunks = chunker.push_samples(&synth_samples(44 * 3));
+    assert_eq!(chunks.len(), 3);
+}
 
-    let mut chunker = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
-    let samples = synth_samples(TOTAL);
-    let chunks = chunker.push_samples(&samples);
-
-    assert!(
-        chunks.len() >= 2,
-        "нужно хотя бы 2 чанка для проверки перекрытия"
-    );
-
-    for pair in chunks.windows(2) {
-        let tail_of_prev = &pair[0].data[chunk_size - overlap..];
-        let head_of_next = &pair[1].data[..overlap];
-        assert_eq!(
-            tail_of_prev, head_of_next,
-            "последние {overlap} сэмплов чанка N должны совпадать с первыми {overlap} сэмплами чанка N+1"
-        );
-    }
+#[test]
+#[should_panic(expected = "Размер чанка должен быть больше 0")]
+fn zero_chunk_size_is_rejected() {
+    Chunker::new(0, 44100);
 }
 
 #[test]
 fn finish_pads_incomplete_tail_with_zeros() {
     const CHUNK_MS: u64 = 100;
-    const OVERLAP_MS: u64 = 20;
     const SAMPLE_RATE: u32 = 1000;
 
-    let (chunk_size, _, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let chunk_size = expected_chunk_size(CHUNK_MS, SAMPLE_RATE);
 
-    // Специально берём длину, не кратную chunk_size/step, чтобы после
+    // Специально берём длину, не кратную chunk_size, чтобы после
     // всех полных чанков в буфере остался "хвост".
     const TOTAL: usize = 250;
     let samples = synth_samples(TOTAL);
 
-    let mut chunker = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let mut chunker = Chunker::new(CHUNK_MS, SAMPLE_RATE);
     let full_chunks = chunker.push_samples(&samples);
 
-    let consumed = full_chunks.len() * step;
+    let consumed = full_chunks.len() * chunk_size;
     let remainder_len = TOTAL - consumed;
     assert!(
         remainder_len > 0 && remainder_len < chunk_size,
@@ -183,14 +156,11 @@ fn finish_pads_incomplete_tail_with_zeros() {
 #[test]
 fn finish_returns_none_when_buffer_is_empty() {
     const CHUNK_MS: u64 = 100;
-    const OVERLAP_MS: u64 = 0;
     const SAMPLE_RATE: u32 = 1000;
 
-    let (chunk_size, overlap, step) = expected_sizes(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
-    assert_eq!(overlap, 0);
-    assert_eq!(step, chunk_size);
+    let chunk_size = expected_chunk_size(CHUNK_MS, SAMPLE_RATE);
 
-    let mut chunker = Chunker::new(CHUNK_MS, OVERLAP_MS, SAMPLE_RATE);
+    let mut chunker = Chunker::new(CHUNK_MS, SAMPLE_RATE);
     // Подаём ровно 3 полных чанка без остатка — буфер должен опустеть полностью.
     let samples = synth_samples(chunk_size * 3);
     let chunks = chunker.push_samples(&samples);
