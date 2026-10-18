@@ -1,0 +1,32 @@
+# Пользовательская служба audio-censor (user unit: звук PipeWire живёт в сессии пользователя).
+#
+# Установка:
+#   cargo build --release
+#   mkdir -p ~/.config/systemd/user
+#   cp systemd/censor_ai.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now censor_ai.service
+#
+# Управление: systemctl --user status|stop|restart censor_ai, журнал: journalctl --user -u censor_ai
+# Если проект лежит не в ~/git/RustProgs/audio-censor — поправьте WorkingDirectory и ExecStart.
+
+[Unit]
+Description=audio-censor: маскирование запрещённых слов в живом звуке
+# Устройства PipeWire должны существовать к моменту запуска
+After=pipewire.service pipewire-pulse.service wireplumber.service
+Wants=pipewire.service
+
+[Service]
+Type=simple
+# Пути к конфигу, словарю, модели и логам относительные — от корня проекта
+WorkingDirectory=%h/git/RustProgs/audio-censor
+# Свой конфиг: добавьте -c config/config.toml
+ExecStart=%h/git/RustProgs/audio-censor/target/release/audio-censor
+# systemd останавливает службу SIGTERM: демон доигрывает хвост задержки (до delay_ms),
+# ждёт опустошения выходного буфера и сохраняет метрики — на это нужно время
+TimeoutStopSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
