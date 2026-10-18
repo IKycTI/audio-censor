@@ -48,7 +48,6 @@ where
     playback_stream: Stream,
     channels: u16,
     running: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
     dict_reload_req: Arc<AtomicBool>,
     metrics_enabled: bool,
     metrics: Arc<Metrics>,
@@ -224,7 +223,6 @@ where
             playback_stream: output_stream,
             channels: settings.audio.channels,
             running: Arc::new(AtomicBool::new(true)),
-            paused: Arc::new(AtomicBool::new(false)),
             dict_reload_req,
             metrics_enabled: settings.metrics.enabled,
             metrics: Arc::clone(&metrics),
@@ -247,10 +245,6 @@ where
 
     pub fn run(&mut self) {
         while self.running.load(Ordering::Relaxed) {
-            if self.paused.load(Ordering::Relaxed) {
-                thread::sleep(Duration::from_millis(50));
-                continue;
-            }
             if self.metrics_enabled
                 && self.last_metrics_export.elapsed() >= self.metrics_export_interval
             {
@@ -372,10 +366,6 @@ where
 
     pub fn running_handle(&self) -> Arc<AtomicBool> {
         Arc::clone(&self.running)
-    }
-
-    pub fn paused_handle(&self) -> Arc<AtomicBool> {
-        Arc::clone(&self.paused)
     }
 
     pub fn dict_reload_handle(&self) -> Arc<AtomicBool> {

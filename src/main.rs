@@ -111,7 +111,6 @@ where
 
     let control_handle = ControlHandle::new(
         orchestrator.running_handle(),
-        orchestrator.paused_handle(),
         orchestrator.metrics_handle(),
         orchestrator.dict_reload_handle(),
         metrics_file,

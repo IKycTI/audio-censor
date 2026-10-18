@@ -12,7 +12,6 @@ use crate::metrics::Metrics;
 #[derive(Clone)]
 pub struct ControlHandle {
     running: Arc<AtomicBool>,
-    paused: Arc<AtomicBool>,
     metrics: Arc<Metrics>,
     dict_reload_requested: Arc<AtomicBool>,
     metrics_file: String,
@@ -21,14 +20,12 @@ pub struct ControlHandle {
 impl ControlHandle {
     pub fn new(
         running: Arc<AtomicBool>,
-        paused: Arc<AtomicBool>,
         metrics: Arc<Metrics>,
         dict_reload_requested: Arc<AtomicBool>,
         metrics_file: String,
     ) -> Self {
         Self {
             running,
-            paused,
             metrics,
             dict_reload_requested,
             metrics_file,
@@ -40,14 +37,6 @@ impl ControlHandle {
             ControlCommand::Status => {
                 let snap = self.metrics.snapshot();
                 serde_json::to_string(&snap).unwrap_or_else(|_| "ERROR: serialize".into())
-            }
-            ControlCommand::Pause => {
-                self.paused.store(true, Ordering::Relaxed);
-                "OK: paused".into()
-            }
-            ControlCommand::Resume => {
-                self.paused.store(false, Ordering::Relaxed);
-                "OK: resumed".into()
             }
             ControlCommand::ReloadDict => {
                 self.dict_reload_requested.store(true, Ordering::Relaxed);
