@@ -1,6 +1,6 @@
 use std::fmt;
 
-use tracing::info;
+use tracing::trace;
 use vosk::{DecodingState, Model, Recognizer, Word};
 
 use crate::{MS_PER_SEC, framing::Chunk, recognition::TimedWord};
@@ -31,7 +31,7 @@ impl SpeechRecognizer {
         match accept_res {
             Ok(res) => match res {
                 DecodingState::Finalized => {
-                    info!("Чанк добавлен, слова были распознаны");
+                    trace!("Чанк добавлен, фраза завершена");
 
                     // single() даёт None, только если включены альтернативы (set_max_alternatives)
                     let words = self
@@ -46,7 +46,7 @@ impl SpeechRecognizer {
                     ))
                 }
                 DecodingState::Running => {
-                    info!("Чанк добавлен, слова не распознаны");
+                    trace!("Чанк добавлен, фраза продолжается");
                     Ok(Vec::new())
                 }
                 // Ошибку логирует вызывающий (поток распознавания) — через Display

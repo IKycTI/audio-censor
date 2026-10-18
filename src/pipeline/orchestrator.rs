@@ -14,7 +14,7 @@ use ringbuf::{
     HeapCons, HeapProd,
     traits::{Consumer, Observer, Producer},
 };
-use tracing::{debug, error, info, warn};
+use tracing::{error, info, trace, warn};
 use vosk::Model;
 
 use crate::{
@@ -61,7 +61,8 @@ where
     metrics_file: String,
     raw_read_buf: Vec<T>,
     last_metrics_export: Instant,
-    metrics_export_interval: Duration,
+    // None — периодическое логирование метрик выключено (export_interval_ms = 0)
+    metrics_export_interval: Option<Duration>,
     output_drain_wait: Duration,
 }
 
@@ -245,7 +246,8 @@ where
             metrics_file: settings.metrics.metrics_file.clone(),
             raw_read_buf: vec![T::EQUILIBRIUM; raw_read_buf_capacity],
             last_metrics_export: Instant::now(),
-            metrics_export_interval: Duration::from_millis(settings.metrics.export_interval_ms),
+            metrics_export_interval: (settings.metrics.export_interval_ms > 0)
+                .then(|| Duration::from_millis(settings.metrics.export_interval_ms)),
             output_drain_wait,
         })
     }
@@ -262,7 +264,8 @@ where
     pub fn run(&mut self) {
         while self.running.load(Ordering::Relaxed) {
             if self.metrics_enabled
-                && self.last_metrics_export.elapsed() >= self.metrics_export_interval
+                && let Some(interval) = self.metrics_export_interval
+                && self.last_metrics_export.elapsed() >= interval
             {
                 let snap = self.metrics.snapshot();
                 info!(
@@ -283,24 +286,23 @@ where
             let n = self.consumer.pop_slice(&mut self.raw_read_buf);
 
             if n == 0 {
-                // info!("В буфере ввода пусто");
                 thread::sleep(Duration::from_millis(2));
                 continue;
             }
-            debug!("Прочитано {} сэмплов из input buffer", n);
+            trace!("Прочитано {} сэмплов из input buffer", n);
 
             let raw_samples = &self.raw_read_buf[..n];
             let len_rs = raw_samples.len();
             // 2. Сырые сэмплы (в исходном типе T) — сразу в delay_buffer,
             //    независимо от того, что с ними будет решено дальше
-            debug!("В delay_buffer отправлено {} сырых семплов", len_rs);
+            trace!("В delay_buffer отправлено {} сырых семплов", len_rs);
             self.delay_buffer.push(raw_samples);
 
             // 3. Параллельно — конвертация в i16-моно и отправка в поток распознавания
             //    (нарезка на чанки, Vosk и decision engine работают там)
-            debug!("На конвертацию отправлено {} сырых семплов", len_rs);
+            trace!("На конвертацию отправлено {} сырых семплов", len_rs);
             let converted = convert_to_i16_mono(raw_samples, self.channels);
-            debug!("Сконвертировано {} семплов", converted.len());
+            trace!("Сконвертировано {} семплов", converted.len());
             self.recognition.send(converted);
 
             // 4. Регистрируем интервалы, которые поток распознавания успел найти
@@ -309,14 +311,14 @@ where
             // 5. Забираем из delay_buffer то, что уже "отлежало" delay_ms
             let ready = self.delay_buffer.pop_ready();
             let len_r = ready.len();
-            debug!("Cемлов готово: {}", len_r);
+            trace!("Cемлов готово: {}", len_r);
 
             if ready.is_empty() {
                 continue;
             }
 
             // 6. Применяем маску (или passthrough) к готовым сэмплам
-            debug!("Применение маски...");
+            trace!("Применение маски...");
             let mut processed = self.masker.process(&ready);
 
             // 7. Компенсация дрейфа часов: держим заполненность выходного буфера около цели
@@ -543,7 +545,7 @@ where
     // При переполнении пишем только целые кадры, иначе каналы на выходе поменяются местами
     let fits = whole_frames(producer.vacant_len().min(processed.len()), channels);
     let pushed = producer.push_slice(&processed[..fits]);
-    debug!("Отдано на выход: {}", pushed);
+    trace!("Отдано на выход: {}", pushed);
     if pushed < processed.len() {
         metrics
             .dropped_output_samples

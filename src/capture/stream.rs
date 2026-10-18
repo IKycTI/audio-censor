@@ -5,7 +5,7 @@ use ringbuf::{
 };
 use rodio::DeviceTrait;
 use std::sync::{Arc, atomic::Ordering};
-use tracing::{debug, error};
+use tracing::error;
 
 use crate::{metrics::Metrics, whole_frames};
 
@@ -26,11 +26,8 @@ where
             let fits = whole_frames(producer.vacant_len().min(data.len()), channels);
             let pushed = producer.push_slice(&data[..fits]);
 
-            debug!(
-                "callback: получено {} сэмплов, записано {}",
-                data.len(),
-                pushed
-            );
+            // Здесь нельзя логировать: колбэк работает в realtime-потоке аудиосистемы,
+            // и запись в лог (блокировки, ввод-вывод) может сорвать его временное окно
             if pushed < data.len() {
                 metrics
                     .dropped_input_samples

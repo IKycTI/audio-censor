@@ -165,8 +165,8 @@ impl WorkerState {
             return;
         }
 
-        info!("Получено {} слов", words.len());
-        debug!("Распознанные слова: \n {:?}", words);
+        // Распознанный текст — это речь пользователя, поэтому только на уровне debug
+        debug!("Получено {} слов: {:?}", words.len(), words);
         self.metrics
             .words_recognized
             .fetch_add(words.len() as u64, Ordering::Relaxed);
