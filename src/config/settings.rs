@@ -142,22 +142,43 @@ pub struct ControlSettings {
     pub socket_path: String,
 }
 
+#[cfg(unix)]
 const SOCKET_NAME: &str = "audio-censor.sock";
+#[cfg(windows)]
+const PIPE_PREFIX: &str = r"\\.\pipe\audio-censor";
 
 impl ControlSettings {
-    /// Путь к control-сокету: из конфига, а если там пусто — `$XDG_RUNTIME_DIR/audio-censor.sock`.
-    /// XDG_RUNTIME_DIR — личный каталог пользователя с правами 0700, в отличие от общего /tmp
+    /// Путь к control-сокету: из конфига, а если там пусто — путь по умолчанию для ОС
     pub fn resolved_socket_path(&self) -> Result<PathBuf, String> {
         if !self.socket_path.is_empty() {
             return Ok(PathBuf::from(&self.socket_path));
         }
-        std::env::var_os("XDG_RUNTIME_DIR")
-            .filter(|dir| !dir.is_empty())
-            .map(|dir| PathBuf::from(dir).join(SOCKET_NAME))
-            .ok_or_else(|| {
-                "XDG_RUNTIME_DIR не задан — укажите control.socket_path в конфиге".to_string()
-            })
+        default_socket_path()
     }
+}
+
+/// `$XDG_RUNTIME_DIR/audio-censor.sock`. XDG_RUNTIME_DIR — личный каталог пользователя
+/// с правами 0700, в отличие от общего /tmp.
+/// TODO (macOS): там XDG_RUNTIME_DIR нет — брать $TMPDIR (CROSSPLATFORM.md)
+#[cfg(unix)]
+fn default_socket_path() -> Result<PathBuf, String> {
+    std::env::var_os("XDG_RUNTIME_DIR")
+        .filter(|dir| !dir.is_empty())
+        .map(|dir| PathBuf::from(dir).join(SOCKET_NAME))
+        .ok_or_else(|| {
+            "XDG_RUNTIME_DIR не задан — укажите control.socket_path в конфиге".to_string()
+        })
+}
+
+/// `\\.\pipe\audio-censor-<пользователь>`. Каналы видны всей машине, поэтому в имени
+/// пользователь: у каждого свой демон, и они не мешают друг другу
+#[cfg(windows)]
+fn default_socket_path() -> Result<PathBuf, String> {
+    let name = match std::env::var("USERNAME") {
+        Ok(user) if !user.is_empty() => format!("{PIPE_PREFIX}-{user}"),
+        _ => PIPE_PREFIX.to_string(),
+    };
+    Ok(PathBuf::from(name))
 }
 
 #[derive(Deserialize)]
