@@ -206,9 +206,8 @@ fn setup_shutdown_signal(running: Arc<AtomicBool>) -> Result<(), ctrlc::Error> {
 
 fn run_control_client(socket_path: &Path, cmd: ControlCommand) -> ExitCode {
     use std::io::{BufRead, BufReader, Write};
-    use std::os::unix::net::UnixStream;
 
-    let mut stream = match UnixStream::connect(socket_path) {
+    let mut stream = match audio_censor::control::connect(socket_path) {
         Ok(s) => s,
         Err(e) => {
             eprintln!(

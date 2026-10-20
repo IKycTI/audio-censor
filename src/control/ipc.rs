@@ -1,12 +1,14 @@
-use std::fs::{self, Permissions};
-use std::io::{BufRead, BufReader, ErrorKind, Write};
-use std::os::unix::fs::PermissionsExt;
-use std::os::unix::net::{UnixListener, UnixStream};
+//! Control-сокет демона. Через `interprocess`: на Unix это Unix-сокет (файл), на Windows —
+//! именованный канал (`\\.\pipe\...`). Адрес в обоих случаях — путь, `PathBuf`.
+
+use std::io::{self, BufRead, BufReader, ErrorKind, Write};
 use std::path::{Path, PathBuf};
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
+use interprocess::local_socket::prelude::*;
+use interprocess::local_socket::{GenericFilePath, Listener, ListenerOptions, Name, Stream};
 use tracing::{error, info, warn};
 
 use crate::control::ControlCommand;
@@ -68,18 +70,21 @@ impl ControlHandle {
 /// Занятый control-сокет. Занимается в самом начале запуска — чтобы второй экземпляр
 /// демона узнал о первом до загрузки модели, — а команды обслуживает после `serve`
 pub struct ControlSocket {
-    listener: UnixListener,
+    listener: Listener,
     file: SocketFile,
 }
 
-/// Файл сокета, который удаляется вместе с этим объектом
+/// Файл сокета, который удаляется вместе с этим объектом. На Windows файла нет:
+/// именованный канал исчезает сам, когда закрывается последний его дескриптор
 pub struct SocketFile {
+    #[cfg_attr(not(unix), allow(dead_code))]
     path: PathBuf,
 }
 
 impl Drop for SocketFile {
     fn drop(&mut self) {
-        if let Err(e) = fs::remove_file(&self.path)
+        #[cfg(unix)]
+        if let Err(e) = std::fs::remove_file(&self.path)
             && e.kind() != ErrorKind::NotFound
         {
             error!(
@@ -95,17 +100,18 @@ impl ControlSocket {
     /// Занять сокет. Если на нём уже отвечает другой демон — ошибка, а не перехват:
     /// иначе второй экземпляр молча отобрал бы управление у первого
     pub fn bind(path: &Path) -> Result<Self, String> {
-        match UnixStream::connect(path) {
+        match connect(path) {
             Ok(_) => {
                 return Err(format!(
                     "демон уже запущен: на {} отвечает другой экземпляр",
                     path.display()
                 ));
             }
-            // Файл есть, но никто не слушает — остался от аварийно завершённого демона
+            // Файл есть, но никто не слушает — остался от аварийно завершённого демона.
+            // Только Unix: канал Windows без сервера не существует, там будет NotFound
             Err(e) if e.kind() == ErrorKind::ConnectionRefused => {
                 warn!("Удаляю устаревший control-сокет {}", path.display());
-                fs::remove_file(path).map_err(|e| {
+                std::fs::remove_file(path).map_err(|e| {
                     format!(
                         "не удалось удалить устаревший сокет {}: {}",
                         path.display(),
@@ -117,16 +123,30 @@ impl ControlSocket {
             Err(e) => return Err(format!("не удалось проверить {}: {}", path.display(), e)),
         }
 
-        let listener = UnixListener::bind(path)
+        let listener = name(path)
+            .and_then(|name| {
+                ListenerOptions::new()
+                    .name(name)
+                    // Файл удаляет SocketFile, а не listener: он живёт в потоке приёма до конца
+                    // процесса и сам не уничтожается
+                    .reclaim_name(false)
+                    .create_sync()
+            })
             .map_err(|e| format!("не удалось создать сокет {}: {}", path.display(), e))?;
         // С этого момента файл наш и удалится при любой ошибке запуска
         let file = SocketFile {
             path: path.to_path_buf(),
         };
 
-        // Команды управления (в том числе shutdown) — только владельцу процесса
-        fs::set_permissions(path, Permissions::from_mode(0o600))
-            .map_err(|e| format!("не удалось выставить права на {}: {}", path.display(), e))?;
+        // Команды управления (в том числе shutdown) — только владельцу процесса.
+        // На Windows этим ведает ACL канала по умолчанию: полный доступ у владельца, SYSTEM
+        // и администраторов, остальным только чтение — отправить команду они не могут
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(path, std::fs::Permissions::from_mode(0o600))
+                .map_err(|e| format!("не удалось выставить права на {}: {}", path.display(), e))?;
+        }
 
         info!("Control-сокет: {}", path.display());
         Ok(ControlSocket { listener, file })
@@ -141,7 +161,16 @@ impl ControlSocket {
     }
 }
 
-fn accept_loop(listener: UnixListener, handle: ControlHandle) {
+/// Подключиться к control-сокету по пути (клиент управления и проверка «демон уже запущен»)
+pub fn connect(path: &Path) -> io::Result<Stream> {
+    Stream::connect(name(path)?)
+}
+
+fn name(path: &Path) -> io::Result<Name<'_>> {
+    path.to_fs_name::<GenericFilePath>()
+}
+
+fn accept_loop(listener: Listener, handle: ControlHandle) {
     for stream in listener.incoming() {
         match stream {
             Ok(stream) => {
@@ -153,15 +182,10 @@ fn accept_loop(listener: UnixListener, handle: ControlHandle) {
     }
 }
 
-fn handle_connection(stream: UnixStream, handle: ControlHandle) {
-    let reader = match stream.try_clone() {
-        Ok(s) => BufReader::new(s),
-        Err(e) => {
-            error!("Не удалось подготовить control-соединение: {}", e);
-            return;
-        }
-    };
-    let mut writer = stream;
+fn handle_connection(stream: Stream, handle: ControlHandle) {
+    // Чтение и запись — через `&Stream`, клонировать соединение не нужно
+    let reader = BufReader::new(&stream);
+    let mut writer = &stream;
 
     for line in reader.lines() {
         let Ok(line) = line else { break };
