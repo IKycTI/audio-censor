@@ -42,12 +42,20 @@ unzip vosk-model-ru-0.22.zip
 
 ## Сборка и запуск
 
-Команды запускаются из корня проекта: пути к конфигу, словарю, модели и логам относительные.
+Без `-c` конфиг ищется по порядку, берётся первый найденный (какой — пишется в лог):
+
+1. `~/.config/audio-censor/config.toml` (точнее `$XDG_CONFIG_HOME/audio-censor/config.toml`;
+   на Windows — `%APPDATA%\audio-censor\config.toml`) — личные настройки;
+2. `config/default.toml` от текущего каталога — запуск из корня проекта (`cargo run`);
+3. `config/default.toml` рядом с бинарником — распакованная поставка.
+
+Пути внутри конфига (словарь, модель, логи, метрики, сокет) отсчитываются от каталога самого
+конфига. В `~/.config/audio-censor/config.toml` путь к модели удобнее писать абсолютным.
 
 ```sh
 cargo build --release
 cargo run -- --show-device all        # список устройств (input | output | all)
-cargo run                             # демон с config/default.toml
+cargo run                             # демон: ~/.config/audio-censor/config.toml или config/default.toml
 cargo run -- -c config/config.toml    # свой конфиг (config/config.toml не хранится в git)
 cargo test
 ```

@@ -18,7 +18,8 @@ Wants=pipewire.service
 
 [Service]
 Type=simple
-# Пути к конфигу, словарю, модели и логам относительные — от корня проекта
+# Без -c конфиг ищется: ~/.config/audio-censor/config.toml, затем config/default.toml
+# от этого каталога; пути внутри конфига (словарь, модель, логи) — от каталога самого конфига
 WorkingDirectory=%h/git/RustProgs/audio-censor
 # Свой конфиг: добавьте -c config/config.toml
 ExecStart=%h/git/RustProgs/audio-censor/target/release/audio-censor
