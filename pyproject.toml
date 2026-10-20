@@ -1,0 +1,13 @@
+# Не Python-проект: uv здесь только скачивает колесо vosk, из которого build.rs
+# берёт нативную библиотеку (libvosk.so / libvosk.dll). Подготовка: `uv sync`
+[project]
+name = "audio-censor-native"
+version = "0"
+requires-python = ">=3.8"
+dependencies = [
+    "vosk==0.3.45; sys_platform != 'darwin'",
+    # TODO (macOS): "vosk==0.3.44; sys_platform == 'darwin'" — для 0.3.45 колеса нет (CROSSPLATFORM.md)
+]
+
+[tool.uv]
+package = false
