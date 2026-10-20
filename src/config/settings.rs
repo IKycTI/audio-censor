@@ -159,7 +159,7 @@ impl ControlSettings {
 
 /// `$XDG_RUNTIME_DIR/audio-censor.sock`. XDG_RUNTIME_DIR — личный каталог пользователя
 /// с правами 0700, в отличие от общего /tmp.
-/// TODO (macOS): там XDG_RUNTIME_DIR нет — брать $TMPDIR (CROSSPLATFORM.md)
+/// TODO (macOS): там XDG_RUNTIME_DIR нет — брать $TMPDIR
 #[cfg(unix)]
 fn default_socket_path() -> Result<PathBuf, String> {
     std::env::var_os("XDG_RUNTIME_DIR")

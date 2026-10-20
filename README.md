@@ -7,15 +7,28 @@
 
 ## Зависимости, не входящие в репозиторий
 
-Каталоги `lib/` и `models/` не хранятся в git (большие платформозависимые файлы),
-их нужно заполнить вручную до сборки.
+Нативная библиотека Vosk и модель не хранятся в git (большие платформозависимые файлы),
+их нужно получить до сборки.
 
-### `lib/libvosk.so`
+### `libvosk.so`
 
-Скачайте `libvosk.so` для своей платформы из релизов
-[vosk-api](https://github.com/alphacep/vosk-api/releases) и положите в `lib/libvosk.so`.
-Без неё не собирается ничего, включая `cargo test`. При сборке `build.rs` копирует
-библиотеку в `target/<profile>/`, рядом с бинарником: он находит её сам (rpath `$ORIGIN`).
+Библиотека берётся из Python-колеса `vosk` с PyPI, его скачивает [uv](https://docs.astral.sh/uv/)
+(версия закреплена в `pyproject.toml` и `uv.lock`):
+
+```sh
+uv sync
+```
+
+Python нужен только для этого шага, программе во время работы он не нужен. Без библиотеки
+не собирается ничего, включая `cargo test`. `build.rs` ищет её по порядку: каталог из переменной
+`VOSK_LIB_DIR` → пакет `vosk` в `.venv` → `lib/` (старая схема: библиотека из релизов
+[vosk-api](https://github.com/alphacep/vosk-api/releases), положенная вручную). Затем копирует
+её в `target/<profile>/`, рядом с бинарником: он находит её сам (rpath `$ORIGIN`).
+
+На Windows колесо содержит `libvosk.dll` и рантайм MinGW (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
+`libwinpthread-1.dll`), но не import library, которая нужна для линковки. `build.rs` сам
+собирает её из экспортов DLL (`libvosk.lib` для MSVC, `libvosk.dll.a` для GNU) и копирует все
+четыре DLL рядом с `audio-censor.exe`. Поддержка Windows пока не завершена.
 
 ### `models/vosk-model-ru-0.22`
 
@@ -40,7 +53,8 @@ cargo test
 ```
 
 Управление запущенным демоном (через Unix-сокет, по умолчанию
-`$XDG_RUNTIME_DIR/audio-censor.sock`):
+`$XDG_RUNTIME_DIR/audio-censor.sock`; на Windows — именованный канал
+`\\.\pipe\audio-censor-<пользователь>`):
 
 ```sh
 cargo run -- status          # метрики в JSON
@@ -86,7 +100,7 @@ logs/
 
 ```
 audio-censor/
-├── build.rs                     # линковка libvosk.so, копирование в target/, rpath
+├── build.rs                     # поиск libvosk (.venv / lib/), линковка, копирование в target/, rpath
 ├── config/
 │   ├── default.toml             # конфигурация по умолчанию
 │   └── banned_words.json        # словарь запрещённых слов
@@ -122,7 +136,7 @@ audio-censor/
 │   │   ├── recognition_worker.rs # поток распознавания: чанки → Vosk → решения
 │   │   └── drift.rs             # компенсация дрейфа часов между устройствами
 │   ├── control/
-│   │   ├── ipc.rs               # Unix-сокет управления
+│   │   ├── ipc.rs               # сокет управления (Unix-сокет / именованный канал Windows)
 │   │   └── commands.rs          # status, reload-dict, save-metrics, shutdown
 │   └── metrics/
 │       └── stats.rs             # счётчики потерь, распознанных и заглушённых слов, опозданий

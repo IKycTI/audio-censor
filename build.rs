@@ -38,7 +38,7 @@ fn platform(target_os: &str) -> Platform {
             rpath: None,
         },
         // TODO (macOS): libvosk.dyld из колеса 0.3.44 → libvosk.dylib, rpath @executable_path
-        other => panic!("сборка под {other} пока не поддерживается, см. CROSSPLATFORM.md"),
+        other => panic!("сборка под {other} пока не поддерживается"),
     }
 }
 

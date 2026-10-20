@@ -54,7 +54,9 @@ padding_ms = 50
 [control]
 # булево: включён ли интерфейс управления демоном на лету
 enabled = true
-# строка: путь к Unix-сокету управления; пусто — $XDG_RUNTIME_DIR/audio-censor.sock
+# строка: путь к сокету управления; пусто — $XDG_RUNTIME_DIR/audio-censor.sock,
+# на Windows — именованный канал \\.\pipe\audio-censor-<пользователь> (свой путь там
+# тоже должен начинаться с \\.\pipe\). На Unix путь не длиннее ~100 символов (sun_path)
 socket_path = ""
 
 [logging]

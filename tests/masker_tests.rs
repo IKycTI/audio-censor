@@ -437,7 +437,7 @@ fn output_position_ms_tracks_processed_samples() {
     assert_eq!(m.output_position_ms(), 3000);
 }
 
-// ── Известные ошибки (см. ERROR.md) ────────────────────────────────
+// ── Известные ошибки ───────────────────────────────────────────────
 
 #[test]
 fn mask_is_continuous_across_batches() {
