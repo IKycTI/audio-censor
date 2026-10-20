@@ -4,6 +4,7 @@
 /models
 /lib
 /logs
+/.venv
 
 # AI artifacts
 CLAUDE.*
