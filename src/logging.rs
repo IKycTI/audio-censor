@@ -7,6 +7,8 @@ use tracing::{info, warn};
 use tracing_subscriber::{EnvFilter, fmt};
 
 const LATEST_LINK: &str = "latest.log";
+#[cfg(windows)]
+const LATEST_POINTER: &str = "latest.txt";
 
 static LOGGER_INIT: Once = Once::new();
 static LOGS_TO_FILE: AtomicBool = AtomicBool::new(false);
@@ -74,5 +76,25 @@ fn link_latest(dir: &Path, file_name: &str) -> std::io::Result<()> {
         Err(e) if e.kind() != std::io::ErrorKind::NotFound => return Err(e),
         _ => {}
     }
-    std::os::unix::fs::symlink(file_name, &link)
+    symlink(file_name, &link, dir)
+}
+
+#[cfg(unix)]
+fn symlink(file_name: &str, link: &Path, _dir: &Path) -> std::io::Result<()> {
+    std::os::unix::fs::symlink(file_name, link)
+}
+
+/// Символическая ссылка на Windows требует прав администратора или режима разработчика.
+/// Без них вместо ссылки — `latest.txt` с именем файла лога текущего сеанса
+#[cfg(windows)]
+fn symlink(file_name: &str, link: &Path, dir: &Path) -> std::io::Result<()> {
+    let pointer = dir.join(LATEST_POINTER);
+    match std::os::windows::fs::symlink_file(file_name, link) {
+        Ok(()) => match fs::remove_file(&pointer) {
+            // Остался от запуска без прав на ссылки — иначе он указывал бы на старый лог
+            Err(e) if e.kind() != std::io::ErrorKind::NotFound => Err(e),
+            _ => Ok(()),
+        },
+        Err(_) => fs::write(pointer, file_name),
+    }
 }
