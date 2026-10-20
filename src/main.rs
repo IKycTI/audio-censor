@@ -1,4 +1,4 @@
-use audio_censor::config::Settings;
+use audio_censor::config::{Settings, locate_config};
 use audio_censor::control::{ControlCommand, ControlHandle, ControlSocket};
 use audio_censor::logging::{init_logger, logs_to_file};
 use audio_censor::metrics::{MetricsReporter, ReportConfig};
@@ -18,7 +18,9 @@ use tracing::{error, info};
 #[derive(Parser)]
 #[command(name = "audio-censor", version, about = "", propagate_version = true)]
 struct Cli {
-    /// Путь к файлу конфигурации
+    /// Путь к файлу конфигурации. Без него: ~/.config/audio-censor/config.toml
+    /// (Windows: %APPDATA%\audio-censor\config.toml), затем config/default.toml
+    /// от текущего каталога, затем рядом с бинарником
     #[arg(short = 'c', long, value_name = "PATH")]
     config_path: Option<PathBuf>,
     /// Показать устройства вместо запуска start
@@ -46,7 +48,14 @@ fn main() -> ExitCode {
     }
 
     // Логгер ещё не инициализирован — ошибку видно только через stderr
-    let settings = match Settings::new(cli.config_path) {
+    let config_path = match locate_config(cli.config_path) {
+        Ok(path) => path,
+        Err(err) => {
+            eprintln!("Ошибка получения конфигурации: {}", err);
+            return ExitCode::FAILURE;
+        }
+    };
+    let settings = match Settings::load(&config_path) {
         Ok(s) => s,
         Err(err) => {
             eprintln!("Ошибка получения конфигурации: {}", err);
@@ -73,6 +82,7 @@ fn main() -> ExitCode {
         return ExitCode::FAILURE;
     }
     info!("Сеанс {}", session.id);
+    info!("Конфигурация: {}", config_path.display());
 
     if let Err(err) = settings.check() {
         return fatal(format!("Ошибка конфигурации: {}", err));

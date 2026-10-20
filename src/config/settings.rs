@@ -1,5 +1,5 @@
 use serde::Deserialize;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use tracing::warn;
 
 use crate::{masking::MaskingStrategy, ms_to_frames, pipeline::OUTPUT_TARGET_FILL_MS};
@@ -17,16 +17,102 @@ pub struct Settings {
     pub metrics: MetricsSettings,
 }
 
-const CONFIG_PATH: &str = "config/default.toml";
+/// Каталог программы в пользовательском каталоге конфигураций
+const APP_DIR: &str = "audio-censor";
+/// Конфиг пользователя: `~/.config/audio-censor/config.toml`
+const USER_CONFIG: &str = "config.toml";
+/// Конфиг по умолчанию — из поставки: от текущего каталога или рядом с бинарником
+const DEFAULT_CONFIG: &str = "config/default.toml";
+
+/// Путь к конфигу: заданный через `-c` — как есть, иначе первый существующий из
+/// [`config_candidates`]
+pub fn locate_config(explicit: Option<PathBuf>) -> Result<PathBuf, String> {
+    if let Some(path) = explicit {
+        return Ok(path);
+    }
+    let candidates = config_candidates();
+    candidates
+        .iter()
+        .find(|path| path.is_file())
+        .cloned()
+        .ok_or_else(|| {
+            let list: Vec<String> = candidates
+                .iter()
+                .map(|p| format!("  {}", p.display()))
+                .collect();
+            format!(
+                "конфиг не найден, проверено:\n{}\nукажите путь через -c",
+                list.join("\n")
+            )
+        })
+}
+
+/// Где ищется конфиг без `-c`, по порядку:
+/// 1. пользовательский — `$XDG_CONFIG_HOME/audio-censor/config.toml` (обычно `~/.config/...`),
+///    на Windows `%APPDATA%\audio-censor\config.toml`;
+/// 2. `config/default.toml` от текущего каталога — запуск из корня репозитория (`cargo run`);
+/// 3. `config/default.toml` рядом с бинарником — распакованная поставка, запуск откуда угодно
+pub fn config_candidates() -> Vec<PathBuf> {
+    let mut candidates = Vec::new();
+    if let Some(dir) = user_config_dir() {
+        candidates.push(dir.join(APP_DIR).join(USER_CONFIG));
+    }
+    candidates.push(PathBuf::from(DEFAULT_CONFIG));
+    if let Some(exe_dir) = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(Path::to_path_buf))
+    {
+        candidates.push(exe_dir.join(DEFAULT_CONFIG));
+    }
+    candidates
+}
+
+/// Каталог пользовательских конфигураций по XDG: `$XDG_CONFIG_HOME`, иначе `~/.config`.
+/// Относительный XDG_CONFIG_HOME по спецификации игнорируется.
+/// TODO (macOS): принято `~/Library/Application Support`
+#[cfg(unix)]
+fn user_config_dir() -> Option<PathBuf> {
+    let non_empty = |name| std::env::var_os(name).filter(|v| !v.is_empty());
+    non_empty("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .or_else(|| non_empty("HOME").map(|home| PathBuf::from(home).join(".config")))
+}
+
+/// `%APPDATA%` — роуминговый профиль пользователя, туда на Windows кладут настройки
+#[cfg(windows)]
+fn user_config_dir() -> Option<PathBuf> {
+    std::env::var_os("APPDATA")
+        .filter(|v| !v.is_empty())
+        .map(PathBuf::from)
+}
 
 impl Settings {
-    pub fn new(config_path: Option<PathBuf>) -> Result<Self, String> {
-        let path = config_path.unwrap_or_else(|| PathBuf::from(CONFIG_PATH));
-
-        let content = std::fs::read_to_string(&path)
+    /// Загрузить конфиг по пути (найти его — [`locate_config`])
+    pub fn load(path: &Path) -> Result<Self, String> {
+        let content = std::fs::read_to_string(path)
             .map_err(|e| format!("не удалось прочитать {}: {}", path.display(), e))?;
 
-        toml::from_str(&content).map_err(|e| format!("ошибка разбора {}: {}", path.display(), e))
+        let mut settings: Settings = toml::from_str(&content)
+            .map_err(|e| format!("ошибка разбора {}: {}", path.display(), e))?;
+        settings.resolve_paths(path.parent().unwrap_or(Path::new("")))?;
+        Ok(settings)
+    }
+
+    /// Относительные пути из конфига — от каталога конфиг-файла, а не от текущего каталога:
+    /// иначе при автозапуске (systemd, Планировщик заданий Windows) они зависели бы от того,
+    /// откуда запустили демон
+    fn resolve_paths(&mut self, config_dir: &Path) -> Result<(), String> {
+        for value in [
+            &mut self.decision.words_dict_path,
+            &mut self.recognition.model_path,
+            &mut self.control.socket_path,
+            &mut self.logging.dir,
+            &mut self.metrics.dir,
+        ] {
+            resolve_path(config_dir, value)?;
+        }
+        Ok(())
     }
 
     pub fn check(&self) -> Result<(), String> {
@@ -90,6 +176,19 @@ impl Settings {
 
         Ok(())
     }
+}
+
+/// Пустая строка («выключено» / «по умолчанию») и абсолютные пути не меняются
+fn resolve_path(config_dir: &Path, value: &mut String) -> Result<(), String> {
+    if value.is_empty() || Path::new(value.as_str()).is_absolute() {
+        return Ok(());
+    }
+    *value = config_dir
+        .join(value.as_str())
+        .into_os_string()
+        .into_string()
+        .map_err(|p| format!("путь {} не в UTF-8", p.to_string_lossy()))?;
+    Ok(())
 }
 
 #[derive(Deserialize)]
