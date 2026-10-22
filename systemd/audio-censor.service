@@ -3,11 +3,11 @@
 # Установка:
 #   cargo build --release
 #   mkdir -p ~/.config/systemd/user
-#   cp systemd/censor_ai.service ~/.config/systemd/user/
+#   cp systemd/audio-censor.service ~/.config/systemd/user/
 #   systemctl --user daemon-reload
-#   systemctl --user enable --now censor_ai.service
+#   systemctl --user enable --now audio-censor.service
 #
-# Управление: systemctl --user status|stop|restart censor_ai, журнал: journalctl --user -u censor_ai
+# Управление: systemctl --user status|stop|restart audio-censor, журнал: journalctl --user -u audio-censor
 # Если проект лежит не в ~/git/RustProgs/audio-censor — поправьте WorkingDirectory и ExecStart.
 
 [Unit]
