@@ -16,5 +16,6 @@ config/config.toml
 *.pdf
 *.doc
 *.docx
+*.pptx
 *.tmp
 *.log
