@@ -1,2 +1,2 @@
-#pagebreak()
+#set heading(numbering: none)
 = Приложение
