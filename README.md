@@ -1,6 +1,6 @@
 # audio-censor
 
-Демон для Linux: захватывает живой звук, распознаёт русскую речь с помощью
+Демон для Linux и Windows: захватывает живой звук, распознаёт русскую речь с помощью
 [Vosk](https://alphacephei.com/vosk/) и маскирует запрещённые слова до того, как они
 попадут на устройство вывода. Звук выводится с задержкой `buffer.delay_ms`, чтобы
 распознавание успело найти слово раньше, чем оно прозвучит.
@@ -28,7 +28,7 @@ Python нужен только для этого шага, программе в
 На Windows колесо содержит `libvosk.dll` и рантайм MinGW (`libgcc_s_seh-1.dll`, `libstdc++-6.dll`,
 `libwinpthread-1.dll`), но не import library, которая нужна для линковки. `build.rs` сам
 собирает её из экспортов DLL (`libvosk.lib` для MSVC, `libvosk.dll.a` для GNU) и копирует все
-четыре DLL рядом с `audio-censor.exe`. Поддержка Windows пока не завершена.
+четыре DLL рядом с `audio-censor.exe`. Пошаговый запуск — в разделе [Запуск на Windows](#запуск-на-windows).
 
 ### `models/vosk-model-ru-0.22`
 
@@ -72,7 +72,259 @@ cargo run -- shutdown        # корректная остановка (как C
 ```
 
 Запуск как пользовательской службы systemd — см. комментарий в начале
-`systemd/censor_ai.service`.
+`systemd/audio-censor.service`.
+
+## Запуск на Linux: виртуальный микрофон
+
+Чтобы зацензуренный звук можно было выбрать микрофоном в любом приложении (Discord, OBS,
+диктофон, браузер), выход демона направляется в виртуальное устройство PipeWire. Код для этого
+не меняется — только настройки системы.
+
+```
+микрофон ─► audio-censor ─► ALSA "censor" ─► censor_sink ══ loopback ══► censor_mic ─► Discord / OBS / ...
+```
+
+cpal на Linux работает через ALSA и видит только `default` и `PipeWire Sound Server`, а не
+отдельные узлы PipeWire. Поэтому нужны две вещи: пара виртуальных узлов в PipeWire и
+ALSA-устройство, через которое cpal до неё доберётся.
+
+### 1. Виртуальный микрофон
+
+`~/.config/pipewire/pipewire.conf.d/50-audio-censor.conf`:
+
+```
+context.modules = [
+  { name = libpipewire-module-loopback
+    args = {
+      node.description = "Audio Censor"
+      capture.props = {
+        node.name        = "censor_sink"
+        node.description = "Audio Censor (вход)"
+        media.class      = "Audio/Sink"
+        audio.position   = [ FL FR ]
+      }
+      playback.props = {
+        node.name        = "censor_mic"
+        node.description = "Censored Microphone"
+        media.class      = "Audio/Source"
+        audio.position   = [ FL FR ]
+      }
+    }
+  }
+]
+```
+
+Сторона `Audio/Sink` принимает звук демона, сторона `Audio/Source` видна приложениям как обычный
+микрофон (monitor-устройства Discord и браузеры часто скрывают).
+
+### 2. ALSA-устройства для демона
+
+Узнать имя узла реального микрофона: `wpctl status` (id в разделе Sources), затем
+`wpctl inspect <id> | grep node.name`.
+
+`~/.asoundrc`:
+
+```
+# выход демона → виртуальный микрофон
+pcm.censor {
+    type pipewire
+    playback_node "censor_sink"
+    hint { show on  description "Audio Censor (виртуальный микрофон)" }
+}
+
+# вход демона — всегда реальный микрофон, а не «по умолчанию»
+pcm.censor_in {
+    type pipewire
+    capture_node "alsa_input.<имя узла микрофона>"
+    hint { show on  description "Audio Censor (реальный микрофон)" }
+}
+```
+
+### 3. Применить и проверить
+
+```sh
+systemctl --user restart pipewire pipewire-pulse wireplumber
+cargo run -- --show-device all     # должны появиться оба устройства «Audio Censor (...)»
+```
+
+### 4. Конфиг демона
+
+```toml
+[audio]
+input_device  = "Audio Censor (реальный микрофон)"
+output_device = "Audio Censor (виртуальный микрофон)"
+sample_rate   = 48000
+channels      = 2
+sample_format = "F32"
+
+[buffer]
+delay_ms = 1500            # 5000 мс для живого разговора слишком много
+
+[recognition]
+partial_results = true     # иначе при малой задержке слова не успеют
+
+[masking]
+strategy = "Silence"       # шумоподавление Discord может вырезать бип
+```
+
+Имя устройства в конфиге — это `description` из `hint` в `~/.asoundrc`.
+
+### 5. Приложения
+
+- Микрофоном выбрать **Censored Microphone** (в Discord: Настройки → Голос и видео → Устройство
+  ввода; шумоподавление Krisp лучше отключить).
+- Слышать себя: `pw-loopback --capture-props='target.object=censor_mic'` — звук виртуального
+  микрофона пойдёт на устройство вывода по умолчанию.
+- Проверка: `pw-record --target censor_mic test.wav`, сказать слово из
+  `config/banned_words.json`, прослушать запись.
+
+### Подводные камни
+
+- **Петля.** Не делать Censored Microphone микрофоном по умолчанию при `input_device = "default"`:
+  демон начнёт слушать сам себя. `censor_in` закрепляет вход за реальным микрофоном.
+- **Системный звук в микрофоне.** «Audio Censor (вход)» появится среди устройств вывода. Если
+  сделать его выходом по умолчанию, весь звук системы уйдёт в микрофон.
+- **Автозапуск.** `systemd/audio-censor.service` уже стартует после PipeWire
+  (`After=pipewire.service … wireplumber.service`); свой конфиг — `-c` в `ExecStart`.
+
+## Запуск на Windows
+
+Создавать устройства Windows не умеет, поэтому выход демона направляется в виртуальный кабель
+[VB-Audio Virtual Cable](https://vb-audio.com/Cable/): программа пишет в «CABLE Input», а другие
+приложения (Discord, OBS, «Запись голоса», браузер) выбирают «CABLE Output» как микрофон.
+
+```
+микрофон ──► audio-censor ──► CABLE Input ══ кабель ══► CABLE Output ──► Discord / OBS / ...
+```
+
+### 1. Установка
+
+```powershell
+winget install Microsoft.VisualStudio.2022.BuildTools   # затем в Visual Studio Installer:
+                                                         # «Разработка классических приложений на C++»
+winget install Rustlang.Rustup
+winget install astral-sh.uv
+winget install Git.Git
+```
+
+VB-Audio Virtual Cable: скачать с [vb-audio.com](https://vb-audio.com/Cable/), запустить
+`VBCABLE_Setup_x64.exe` от администратора, перезагрузиться. После установок открыть новое окно
+PowerShell, чтобы обновился `PATH`.
+
+### 2. Сборка и модель
+
+Проект лучше класть в путь без кириллицы и пробелов (например, `C:\dev\audio-censor`): Vosk
+может не открыть модель по пути с не-ASCII символами.
+
+```powershell
+cd C:\dev
+git clone <адрес репозитория> audio-censor
+cd audio-censor
+uv sync
+cargo build --release
+```
+
+Модель `vosk-model-ru-0.22` распаковать в `models\vosk-model-ru-0.22\` (как в разделе выше).
+
+### 3. Звук Windows
+
+WASAPI в общем режиме принимает только собственное число каналов устройства и его частоту, а
+`audio.channels` и `audio.sample_rate` общие для входа и выхода. Поэтому у микрофона и у
+«CABLE Input» они должны совпадать:
+
+1. `Win+R` → `mmsys.cpl`.
+2. «Воспроизведение» → **CABLE Input** → Свойства → Дополнительно → «2 канала, 24 бит, 48000 Гц».
+3. «Запись» → **микрофон** → Свойства → Дополнительно → вариант с 48000 Гц (и 2 каналами, если есть).
+   У **CABLE Output** там же — 48000 Гц.
+4. Проверить: `.\target\release\audio-censor.exe --show-device all` — у микрофона и CABLE Input
+   одинаковые каналы, частота и формат (обычно `F32`).
+
+Если микрофон только моно, а кабель стерео, попробуйте уменьшить число каналов кабеля в
+`VBCABLE_ControlPanel.exe`. Если не получится, нужна доработка: разные `channels` для входа и
+выхода.
+
+«Параметры → Конфиденциальность и защита → Микрофон»: включить доступ классическим приложениям.
+
+### 4. Конфиг
+
+```powershell
+copy config\default.toml config\config.toml
+notepad config\config.toml
+```
+
+```toml
+[audio]
+input_device  = "Микрофон (Realtek(R) Audio)"   # точное имя микрофона, не "default"
+output_device = "CABLE Input"
+sample_rate   = 48000
+channels      = 2          # как у обоих устройств в --show-device
+sample_format = "F32"
+
+[buffer]
+delay_ms = 1500            # 5000 мс для живого разговора слишком много
+
+[recognition]
+partial_results = true     # иначе при малой задержке слова не успеют
+
+[masking]
+strategy = "Silence"       # шумоподавление Discord может вырезать бип
+```
+
+- Имя устройства — без того, что `--show-device` печатает после него: производителя в круглых
+  скобках и типа в квадратных. Если демон пишет «устройство … не найдено», попробовать полное
+  название из `mmsys.cpl` (например, `CABLE Input (VB-Audio Virtual Cable)`).
+- `input_device = "default"` не оставлять: если Windows сделает CABLE Output микрофоном по
+  умолчанию, демон начнёт слушать собственный выход.
+
+### 5. Запуск
+
+```powershell
+.\target\release\audio-censor.exe -c config\config.toml
+```
+
+Лог — `logs\latest.log` (или `logs\latest.txt` с именем текущего лога, если Windows не разрешает
+символические ссылки). Управление — из второго окна, через именованный канал:
+
+```powershell
+.\target\release\audio-censor.exe -c config\config.toml status
+.\target\release\audio-censor.exe -c config\config.toml reload-dict
+.\target\release\audio-censor.exe -c config\config.toml shutdown
+```
+
+Останавливать через `shutdown` или `Ctrl+C`, а не крестиком окна: при закрытии консоли у процесса
+около 5 с, и хвост буфера с итоговыми метриками могут не сохраниться.
+
+### 6. Приложения
+
+- **Discord**: Настройки → Голос и видео → Устройство ввода «CABLE Output (VB-Audio Virtual Cable)»;
+  отключить шумоподавление (Krisp), по желанию — эхоподавление и автоусиление.
+- **OBS, «Запись голоса», браузер**: так же выбрать CABLE Output как микрофон.
+- **Слышать себя**: `mmsys.cpl` → Запись → CABLE Output → Свойства → Прослушать →
+  «Прослушивать с данного устройства».
+
+Проверка: записать в «Записи голоса» с CABLE Output фразу со словом из
+`config\banned_words.json` — оно должно быть заглушено.
+
+### 7. Автозапуск
+
+Не службой: службы работают в сеансе 0 и не видят аудиоустройств пользователя. Задача
+Планировщика при входе в систему:
+
+```powershell
+schtasks /Create /TN "audio-censor" /SC ONLOGON /RL LIMITED `
+  /TR "\"C:\dev\audio-censor\target\release\audio-censor.exe\" -c \"C:\dev\audio-censor\config\config.toml\""
+```
+
+### Неполадки
+
+| Симптом | Причина |
+|---|---|
+| `link.exe not found` | не установлены C++ Build Tools |
+| `build.rs` паникует про libvosk | не выполнен `uv sync` |
+| «устройство … не найдено» | лишнее в имени устройства (п. 4) |
+| «устройство не поддерживает формат …» | не совпали каналы или частота (п. 3) |
+| ошибка загрузки модели | неверный `model_path` или кириллица в пути |
+| в приложении тишина | выбран не CABLE Output, или `output_device` не CABLE Input |
 
 ## Конфигурация
 
@@ -113,7 +365,7 @@ audio-censor/
 │   ├── default.toml             # конфигурация по умолчанию
 │   └── banned_words.json        # словарь запрещённых слов
 ├── systemd/
-│   └── censor_ai.service        # пользовательская служба systemd
+│   └── audio-censor.service     # пользовательская служба systemd
 ├── doc/                         # диплом (Typst), описывающий программу
 ├── src/
 │   ├── main.rs                  # аргументы, режимы (демон / клиент управления / список устройств)
