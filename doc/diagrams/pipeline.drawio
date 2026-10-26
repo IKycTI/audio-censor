@@ -4,43 +4,43 @@
             <root>
                 <mxCell id="0"/>
                 <mxCell id="1" parent="0"/>
-                <mxCell id="2" value="" style="edgeStyle=none;html=1;" parent="1" source="3" target="5" edge="1">
+                <mxCell id="2" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="3" target="5" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="3" value="Микрофон/аудиофайл" style="ellipse;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="3" value="&lt;font&gt;Микрофон/аудиофайл&lt;/font&gt;" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="246.5" y="-106" width="120" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="4" value="" style="edgeStyle=none;html=1;" parent="1" source="5" target="10" edge="1">
+                <mxCell id="4" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="5" target="10" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="5" value="Кольцевой буфер без блокировки" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="5" value="Кольцевой буфер без блокировки" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="241" y="14" width="130" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="6" value="" style="edgeStyle=none;html=1;" parent="1" target="5" edge="1">
+                <mxCell id="6" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" target="5" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="441" y="44" as="sourcePoint"/>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="7" value="Кольцевой буфер" style="ellipse;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="7" value="Кольцевой буфер" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="440" y="4" width="120" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="25" value="" style="edgeStyle=none;html=1;" parent="1" source="10" target="24" edge="1">
+                <mxCell id="25" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="10" target="24" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="10" value="Модуль ASR: Vosk (HMM-DNN)" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="10" value="Модуль ASR: Vosk (HMM-DNN)" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="242" y="120" width="129" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="11" value="" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" source="12" target="16" edge="1">
+                <mxCell id="11" value="" style="edgeStyle=none;html=1;entryX=0;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;fontFamily=Times New Roman;" parent="1" source="12" target="16" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <Array as="points">
                             <mxPoint x="88" y="380"/>
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="12" value="Частичные гипотезы" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="12" value="Частичные гипотезы" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="20" y="240" width="135" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="13" value="" style="edgeStyle=none;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;" parent="1" edge="1" source="14">
+                <mxCell id="13" value="" style="edgeStyle=none;html=1;entryX=1;entryY=0.5;entryDx=0;entryDy=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;fontFamily=Times New Roman;" parent="1" source="14" edge="1">
                     <mxGeometry relative="1" as="geometry">
                         <mxPoint x="507.5" y="300" as="sourcePoint"/>
                         <mxPoint x="365.5" y="380" as="targetPoint"/>
@@ -49,49 +49,49 @@
                         </Array>
                     </mxGeometry>
                 </mxCell>
-                <mxCell id="14" value="Финальные гипотезы" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="14" value="Финальные гипотезы" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="460" y="240" width="135" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="15" value="" style="edgeStyle=none;html=1;" parent="1" source="16" target="18" edge="1">
+                <mxCell id="15" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="16" target="18" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="16" value="Модуль цензуры: Левенштейн" style="whiteSpace=wrap;html=1;rounded=0;" parent="1" vertex="1">
+                <mxCell id="16" value="Модуль цензуры: Левенштейн" style="whiteSpace=wrap;html=1;rounded=0;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="245.5" y="350" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="17" value="" style="edgeStyle=none;html=1;" parent="1" source="18" target="20" edge="1">
+                <mxCell id="17" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="18" target="20" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="18" value="Список интервалов M" style="whiteSpace=wrap;html=1;rounded=0;" parent="1" vertex="1">
+                <mxCell id="18" value="Список интервалов M" style="whiteSpace=wrap;html=1;rounded=0;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="245.5" y="425" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="19" value="" style="edgeStyle=none;html=1;" parent="1" source="20" target="22" edge="1">
+                <mxCell id="19" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="20" target="22" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="20" value="Модуль маскирования: окно Хэннинга (DASP)" style="whiteSpace=wrap;html=1;rounded=0;" parent="1" vertex="1">
+                <mxCell id="20" value="Модуль маскирования:&amp;nbsp;&lt;br&gt;Линейный переход" style="whiteSpace=wrap;html=1;rounded=0;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="245" y="500" width="120" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="21" value="" style="edgeStyle=none;html=1;" parent="1" source="22" target="23" edge="1">
+                <mxCell id="21" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="22" target="23" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="22" value="Кольцевой буфер без блокировки&lt;br&gt;(цензурированный)" style="rounded=0;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="22" value="Кольцевой буфер без блокировки&lt;br&gt;(цензурированный)" style="rounded=0;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="240" y="580" width="130" height="60" as="geometry"/>
                 </mxCell>
-                <mxCell id="23" value="Динамик/выходной поток" style="ellipse;whiteSpace=wrap;html=1;" parent="1" vertex="1">
+                <mxCell id="23" value="Динамик/выходной поток" style="ellipse;whiteSpace=wrap;html=1;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="245" y="670" width="120" height="80" as="geometry"/>
                 </mxCell>
-                <mxCell id="26" value="" style="edgeStyle=none;html=1;" parent="1" source="24" target="12" edge="1">
+                <mxCell id="26" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="24" target="12" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="27" value="" style="edgeStyle=none;html=1;" parent="1" source="24" target="14" edge="1">
+                <mxCell id="27" value="" style="edgeStyle=none;html=1;fontFamily=Times New Roman;" parent="1" source="24" target="14" edge="1">
                     <mxGeometry relative="1" as="geometry"/>
                 </mxCell>
-                <mxCell id="24" value="Промежуточные гипотезы включены?" style="rhombus;whiteSpace=wrap;html=1;rounded=0;" parent="1" vertex="1">
+                <mxCell id="24" value="Промежуточные гипотезы &lt;br&gt;включены?" style="rhombus;whiteSpace=wrap;html=1;rounded=0;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="205.75" y="220" width="201.5" height="100" as="geometry"/>
                 </mxCell>
-                <mxCell id="28" value="Да" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                <mxCell id="28" value="Да" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="165.75" y="240" width="40" height="30" as="geometry"/>
                 </mxCell>
-                <mxCell id="29" value="Нет" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;" parent="1" vertex="1">
+                <mxCell id="29" value="Нет" style="text;html=1;align=center;verticalAlign=middle;resizable=0;points=[];autosize=1;strokeColor=none;fillColor=none;fontFamily=Times New Roman;" parent="1" vertex="1">
                     <mxGeometry x="407.25" y="240" width="40" height="30" as="geometry"/>
                 </mxCell>
             </root>
