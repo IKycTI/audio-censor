@@ -1,0 +1,36 @@
+{
+  "session": "2026-10-18_15-14-48",
+  "started_at": "2026-10-18T15:14:48Z",
+  "final": true,
+  "config": {
+    "sample_rate": 44100,
+    "channels": 2,
+    "sample_format": "F32",
+    "delay_ms": 5000,
+    "chunk_size_ms": 100,
+    "partial_results": true,
+    "min_confidence": 0.0,
+    "max_distance": 1,
+    "strategy": "Beep",
+    "padding_ms": 50
+  },
+  "metrics": {
+    "stream_duration_ms": 48018,
+    "dropped_input_samples": 0,
+    "dropped_output_samples": 0,
+    "underrun_samples": 0,
+    "words_recognized": 10,
+    "words_censored": 4,
+    "recognizer_errors": 0,
+    "late_intervals": 0,
+    "partial_intervals": 1,
+    "unconfirmed_partial_intervals": 0,
+    "drift_dropped_frames": 0,
+    "drift_inserted_frames": 0,
+    "output_prefills": 1,
+    "output_prefill_frames": 8648,
+    "recognition_latency_samples": 4,
+    "recognition_latency_avg_ms": 2945,
+    "recognition_latency_max_ms": 3340
+  }
+}

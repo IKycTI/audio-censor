@@ -1,0 +1,30 @@
+2026-10-18T15:14:48.787498Z  INFO audio_censor::logging: Логгер инициализирован
+2026-10-18T15:14:48.787536Z  INFO audio_censor: Сеанс 2026-10-18_15-14-48
+2026-10-18T15:14:48.787546Z  INFO audio_censor: Запуск audio-censor
+2026-10-18T15:14:48.787602Z  INFO audio_censor::control::ipc: Control-сокет: /run/user/1000/audio-censor.sock
+2026-10-18T15:14:48.787622Z  INFO audio_censor::pipeline::orchestrator: Загрузка словаря запрещенных слов из config/banned_words.json...
+2026-10-18T15:14:48.787783Z  INFO audio_censor::pipeline::orchestrator: Словарь загружен
+2026-10-18T15:14:48.792631Z  INFO audio_censor::capture::device: Используем устройство ввода: PipeWire Sound Server
+2026-10-18T15:14:48.797704Z  INFO audio_censor::capture::device: Найдена конфигурация ввода: SupportedStreamConfig { channels: 2, sample_rate: 44100, buffer_size: Range { min: 1, max: 4194304 }, sample_format: F32 }
+2026-10-18T15:14:48.800305Z  INFO audio_censor::playback::device: Используем устройство вывода: PipeWire Sound Server
+2026-10-18T15:14:48.801865Z  INFO audio_censor::playback::device: Найдена конфигурация вывода: SupportedStreamConfig { channels: 2, sample_rate: 44100, buffer_size: Range { min: 1, max: 4194304 }, sample_format: F32 }
+2026-10-18T15:14:48.801945Z  INFO audio_censor::pipeline::orchestrator: Загрузка модели из models/vosk-model-ru-0.22...
+2026-10-18T15:15:09.209074Z  INFO audio_censor::pipeline::orchestrator: Модель загружена
+2026-10-18T15:15:09.209532Z  INFO audio_censor::framing::chunker: Размер чанка: 4410
+2026-10-18T15:15:09.410897Z  INFO audio_censor::pipeline::recognition_worker: Поток распознавания запущен
+2026-10-18T15:15:09.411124Z  INFO audio_censor::pipeline::orchestrator: Размер буфера сырых сэмплов: 8820
+2026-10-18T15:15:09.445048Z  INFO audio_censor::pipeline::orchestrator: Запуск потоков ввода и вывода
+2026-10-18T15:15:09.445095Z  INFO audio_censor::pipeline::orchestrator: Поток ввода запущен
+2026-10-18T15:15:09.445100Z  INFO audio_censor::pipeline::orchestrator: Поток вывода запущен
+2026-10-18T15:15:09.445163Z  INFO audio_censor: audio-censor успешно запущен, для остановки нажмите Ctrl+C
+2026-10-18T15:15:14.455897Z  INFO audio_censor::pipeline::orchestrator: Старт вывода: добавлено 8648 кадров тишины
+2026-10-18T15:15:19.445194Z  INFO audio_censor::pipeline::orchestrator: метрики dropped_input=0 dropped_output=0 underruns=0 words_recognized=0 words_censored=0 recognizer_errors=0 late_intervals=0 partial_intervals=0 unconfirmed_partial=0 drift_dropped=0 drift_inserted=0 output_prefills=1 output_prefill_frames=8648
+2026-10-18T15:15:29.445814Z  INFO audio_censor::pipeline::orchestrator: метрики dropped_input=0 dropped_output=0 underruns=0 words_recognized=3 words_censored=1 recognizer_errors=0 late_intervals=0 partial_intervals=0 unconfirmed_partial=0 latency_avg_ms=2786 latency_max_ms=2786 drift_dropped=0 drift_inserted=0 output_prefills=1 output_prefill_frames=8648
+2026-10-18T15:15:39.447880Z  INFO audio_censor::pipeline::orchestrator: метрики dropped_input=0 dropped_output=0 underruns=0 words_recognized=4 words_censored=2 recognizer_errors=0 late_intervals=0 partial_intervals=0 unconfirmed_partial=0 latency_avg_ms=2810 latency_max_ms=2834 drift_dropped=0 drift_inserted=0 output_prefills=1 output_prefill_frames=8648
+2026-10-18T15:15:49.448918Z  INFO audio_censor::pipeline::orchestrator: метрики dropped_input=0 dropped_output=0 underruns=0 words_recognized=7 words_censored=4 recognizer_errors=0 late_intervals=0 partial_intervals=1 unconfirmed_partial=0 latency_avg_ms=2945 latency_max_ms=3340 drift_dropped=0 drift_inserted=0 output_prefills=1 output_prefill_frames=8648
+2026-10-18T15:15:57.465134Z  INFO audio_censor: Получен сигнал завершения (Ctrl+C / SIGTERM)
+2026-10-18T15:15:57.465401Z  INFO audio_censor: Получен сигнал остановки, завершаю обработку хвостов...
+2026-10-18T15:15:58.314192Z  INFO audio_censor::pipeline::recognition_worker: Поток распознавания остановлен
+2026-10-18T15:16:04.700110Z  INFO audio_censor::pipeline::orchestrator: Оркестратор остановлен, итоговые метрики dropped_input=0 dropped_output=0 underruns=0 words_recognized=10 words_censored=4 recognizer_errors=0 late_intervals=0 partial_intervals=1 unconfirmed_partial=0 latency_avg_ms=2945 latency_max_ms=3340 drift_dropped=0 drift_inserted=0 output_prefills=1 output_prefill_frames=8648
+2026-10-18T15:16:04.749432Z  INFO audio_censor: Метрики сохранены в logs/2026-10-18_15-14-48.metrics.json и logs/sessions.jsonl
+2026-10-18T15:16:04.749460Z  INFO audio_censor: Завершено
