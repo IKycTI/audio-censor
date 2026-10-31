@@ -4,6 +4,8 @@
 /models
 /lib
 /logs
+/doc/additionals
+/doc/examples
 /.venv
 
 # AI artifacts
