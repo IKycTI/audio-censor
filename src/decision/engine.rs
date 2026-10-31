@@ -32,6 +32,15 @@ impl DecisionEngine {
         }
     }
 
+    /// Запись словаря, под которую попало слово, с теми же правилами, что и
+    /// `get_interval_ban_time`; None — слово не цензурируется
+    pub fn matched_entry(&self, timed_word: &TimedWord) -> Option<&str> {
+        if timed_word.conf < self.min_confidence {
+            return None;
+        }
+        self.rules.matched_entry(&timed_word.word)
+    }
+
     // Используется для тестирования и симуляции потока данных
     pub fn get_batch_ban_time(&self, timed_words: &[TimedWord]) -> Option<Vec<IntervalBanTime>> {
         let mut ban_times = Vec::new();

@@ -12,7 +12,7 @@ use tracing::{debug, error, info};
 use vosk::Model;
 
 use crate::{
-    decision::{DecisionEngine, DetectedInterval, PhraseTracker},
+    decision::{DecisionEngine, DetectedInterval, PhraseTracker, normalize_word},
     framing::{Chunk, Chunker},
     metrics::Metrics,
     pipeline::orchestrator::{OrchestratorError, load_banned_words},
@@ -192,6 +192,14 @@ impl WorkerState {
             self.metrics
                 .words_recognized
                 .fetch_add(words.len() as u64, Ordering::Relaxed);
+        }
+        // Статистика по словам — по окончательному результату: частичные находки
+        // он подтверждает или отменяет, а слова из него и есть итог распознавания
+        for word in words {
+            if let Some(entry) = self.engine.matched_entry(word) {
+                self.metrics
+                    .record_censored_word(entry, &normalize_word(&word.word));
+            }
         }
 
         let intervals = self.engine.get_batch_ban_time(words).unwrap_or_default();

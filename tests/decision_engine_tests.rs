@@ -235,3 +235,34 @@ fn empty_dictionary_bans_nothing() {
     let engine = make_engine(&[], 3);
     assert!(!is_banned(&engine, "дурак"));
 }
+
+#[test]
+fn matched_entry_exact_after_normalization() {
+    let engine = make_engine(&["хакер"], 1);
+    let word = TimedWord::new("Хакер!", 0, 300);
+    assert_eq!(engine.matched_entry(&word), Some("хакер"));
+}
+
+#[test]
+fn matched_entry_fuzzy_picks_nearest() {
+    // «хакеры» на расстоянии 1 от «хакер» и 2 от «хакера»
+    let engine = make_engine(&["хакер", "хакеров"], 2);
+    let word = TimedWord::new("хакеры", 0, 300);
+    assert_eq!(engine.matched_entry(&word), Some("хакер"));
+}
+
+#[test]
+fn matched_entry_tie_is_alphabetical() {
+    // «сода» на расстоянии 1 и от «кода», и от «вода»: берётся первая по алфавиту
+    let engine = make_engine(&["кода", "вода"], 1);
+    let word = TimedWord::new("сода", 0, 300);
+    assert_eq!(engine.matched_entry(&word), Some("вода"));
+}
+
+#[test]
+fn matched_entry_respects_short_words_and_confidence() {
+    let engine = make_engine_with_confidence(&["суд", "хакер"], 1, 0.5);
+    assert_eq!(engine.matched_entry(&TimedWord::new("сут", 0, 300)), None);
+    let unsure = TimedWord::new("хакер", 0, 300).with_conf(0.3);
+    assert_eq!(engine.matched_entry(&unsure), None);
+}

@@ -61,3 +61,33 @@ fn chunk_processing_average_and_maximum() {
     assert_eq!(snap.chunk_processing_avg_us, Some(17_166));
     assert_eq!(snap.chunk_processing_max_us, Some(30_500));
 }
+
+#[test]
+fn censored_words_grouped_by_entry() {
+    let metrics = Metrics::default();
+    metrics.record_censored_word("хакер", "хакеры");
+    metrics.record_censored_word("хакер", "хакеры");
+    metrics.record_censored_word("хакер", "хантер");
+    metrics.record_censored_word("суд", "суд");
+
+    let snap = metrics.snapshot();
+    let hacker = &snap.censored_words["хакер"];
+    assert_eq!(hacker.count, 3);
+    assert_eq!(hacker.recognized_as["хакеры"], 2);
+    assert_eq!(hacker.recognized_as["хантер"], 1);
+    assert_eq!(snap.censored_words["суд"].count, 1);
+}
+
+#[test]
+fn censored_words_serialized_as_object() {
+    let metrics = Metrics::default();
+    let empty = serde_json::to_string(&metrics.snapshot()).unwrap();
+    assert!(empty.contains("\"censored_words\":{}"), "{empty}");
+
+    metrics.record_censored_word("суд", "суд");
+    let json = serde_json::to_string(&metrics.snapshot()).unwrap();
+    assert!(
+        json.contains("\"censored_words\":{\"суд\":{\"count\":1,\"recognized_as\":{\"суд\":1}}}"),
+        "{json}"
+    );
+}

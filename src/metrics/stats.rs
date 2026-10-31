@@ -1,4 +1,6 @@
+use std::collections::BTreeMap;
 use std::default::Default;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicU64, Ordering};
 
 #[derive(Default)]
@@ -26,6 +28,10 @@ pub struct Metrics {
     chunk_processing_count: AtomicU64,
     chunk_processing_sum_us: AtomicU64,
     chunk_processing_max_us: AtomicU64,
+    // Заглушённые слова по окончательным результатам: запись словаря → распознанная
+    // форма → сколько раз. Пишет только поток распознавания, не аудио-callback,
+    // поэтому мьютекс здесь допустим
+    censored_words: Mutex<BTreeMap<String, BTreeMap<String, u64>>>,
 }
 
 impl Metrics {
@@ -46,6 +52,19 @@ impl Metrics {
             .fetch_add(processing_us, Ordering::Relaxed);
         self.chunk_processing_max_us
             .fetch_max(processing_us, Ordering::Relaxed);
+    }
+
+    /// Учесть заглушённое слово: `entry` — запись словаря, `recognized` — что распознал Vosk
+    pub fn record_censored_word(&self, entry: &str, recognized: &str) {
+        let mut words = self
+            .censored_words
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        *words
+            .entry(entry.to_string())
+            .or_default()
+            .entry(recognized.to_string())
+            .or_default() += 1;
     }
 
     pub fn snapshot(&self) -> MetricsSnapshot {
@@ -79,6 +98,19 @@ impl Metrics {
             chunk_processing_avg_us: (chunk_count > 0).then(|| chunk_sum / chunk_count),
             chunk_processing_max_us: (chunk_count > 0)
                 .then(|| self.chunk_processing_max_us.load(Ordering::Relaxed)),
+            censored_words: self
+                .censored_words
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner())
+                .iter()
+                .map(|(entry, forms)| {
+                    let stats = CensoredWordStats {
+                        count: forms.values().sum(),
+                        recognized_as: forms.clone(),
+                    };
+                    (entry.clone(), stats)
+                })
+                .collect(),
         }
     }
 }
@@ -105,4 +137,12 @@ pub struct MetricsSnapshot {
     pub chunks_processed: u64,
     pub chunk_processing_avg_us: Option<u64>,
     pub chunk_processing_max_us: Option<u64>,
+    pub censored_words: BTreeMap<String, CensoredWordStats>,
+}
+
+/// Сколько раз сработала запись словаря и какими распознанными словами
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct CensoredWordStats {
+    pub count: u64,
+    pub recognized_as: BTreeMap<String, u64>,
 }
