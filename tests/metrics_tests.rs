@@ -40,3 +40,24 @@ fn latency_is_serialized_as_null_when_absent() {
         "{json}"
     );
 }
+
+#[test]
+fn chunk_processing_is_null_before_first_chunk() {
+    let snap = Metrics::default().snapshot();
+    assert_eq!(snap.chunks_processed, 0);
+    assert_eq!(snap.chunk_processing_avg_us, None);
+    assert_eq!(snap.chunk_processing_max_us, None);
+}
+
+#[test]
+fn chunk_processing_average_and_maximum() {
+    let metrics = Metrics::default();
+    for processing in [12_000, 30_500, 9_000] {
+        metrics.record_chunk_processing(processing);
+    }
+
+    let snap = metrics.snapshot();
+    assert_eq!(snap.chunks_processed, 3);
+    assert_eq!(snap.chunk_processing_avg_us, Some(17_166));
+    assert_eq!(snap.chunk_processing_max_us, Some(30_500));
+}

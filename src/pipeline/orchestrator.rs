@@ -522,6 +522,8 @@ fn log_metrics(snap: &MetricsSnapshot, message: &str) {
         unconfirmed_partial = snap.unconfirmed_partial_intervals,
         latency_avg_ms = snap.recognition_latency_avg_ms,
         latency_max_ms = snap.recognition_latency_max_ms,
+        chunk_avg_us = snap.chunk_processing_avg_us,
+        chunk_max_us = snap.chunk_processing_max_us,
         drift_dropped = snap.drift_dropped_frames,
         drift_inserted = snap.drift_inserted_frames,
         output_prefills = snap.output_prefills,

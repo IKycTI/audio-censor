@@ -5,7 +5,7 @@ use std::{
         mpsc::{self, Receiver, RecvTimeoutError, Sender},
     },
     thread::{self, JoinHandle},
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use tracing::{debug, error, info};
@@ -151,6 +151,8 @@ impl WorkerState {
     }
 
     fn push_chunk(&mut self, chunk: &Chunk) {
+        // Декодирование и принятие решения вместе: это τ_proc из условия стабильности
+        let started = Instant::now();
         match self.recognizer.push_chunk(chunk) {
             Ok(Recognition::Partial(words)) => self.handle_partial(&words),
             Ok(Recognition::Final(words)) => self.handle_final(&words),
@@ -161,6 +163,8 @@ impl WorkerState {
                     .fetch_add(1, Ordering::Relaxed);
             }
         }
+        self.metrics
+            .record_chunk_processing(started.elapsed().as_micros() as u64);
     }
 
     /// Фраза ещё идёт: запрещённое слово из гипотезы маскируем сразу, не дожидаясь паузы.

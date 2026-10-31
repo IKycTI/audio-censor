@@ -21,6 +21,11 @@ pub struct Metrics {
     recognition_latency_count: AtomicU64,
     recognition_latency_sum_ms: AtomicU64,
     recognition_latency_max_ms: AtomicU64,
+    // Время обработки одного чанка в потоке распознавания (Vosk + принятие решения), мкс.
+    // Должно быть меньше длительности чанка, иначе чанки копятся в очереди
+    chunk_processing_count: AtomicU64,
+    chunk_processing_sum_us: AtomicU64,
+    chunk_processing_max_us: AtomicU64,
 }
 
 impl Metrics {
@@ -34,9 +39,20 @@ impl Metrics {
             .fetch_max(latency_ms, Ordering::Relaxed);
     }
 
+    /// Учесть время обработки одного чанка
+    pub fn record_chunk_processing(&self, processing_us: u64) {
+        self.chunk_processing_count.fetch_add(1, Ordering::Relaxed);
+        self.chunk_processing_sum_us
+            .fetch_add(processing_us, Ordering::Relaxed);
+        self.chunk_processing_max_us
+            .fetch_max(processing_us, Ordering::Relaxed);
+    }
+
     pub fn snapshot(&self) -> MetricsSnapshot {
         let latency_count = self.recognition_latency_count.load(Ordering::Relaxed);
         let latency_sum = self.recognition_latency_sum_ms.load(Ordering::Relaxed);
+        let chunk_count = self.chunk_processing_count.load(Ordering::Relaxed);
+        let chunk_sum = self.chunk_processing_sum_us.load(Ordering::Relaxed);
         MetricsSnapshot {
             stream_duration_ms: self.stream_duration_ms.load(Ordering::Relaxed),
             dropped_input_samples: self.dropped_input_samples.load(Ordering::Relaxed),
@@ -59,6 +75,10 @@ impl Metrics {
             recognition_latency_avg_ms: (latency_count > 0).then(|| latency_sum / latency_count),
             recognition_latency_max_ms: (latency_count > 0)
                 .then(|| self.recognition_latency_max_ms.load(Ordering::Relaxed)),
+            chunks_processed: chunk_count,
+            chunk_processing_avg_us: (chunk_count > 0).then(|| chunk_sum / chunk_count),
+            chunk_processing_max_us: (chunk_count > 0)
+                .then(|| self.chunk_processing_max_us.load(Ordering::Relaxed)),
         }
     }
 }
@@ -82,4 +102,7 @@ pub struct MetricsSnapshot {
     pub recognition_latency_samples: u64,
     pub recognition_latency_avg_ms: Option<u64>,
     pub recognition_latency_max_ms: Option<u64>,
+    pub chunks_processed: u64,
+    pub chunk_processing_avg_us: Option<u64>,
+    pub chunk_processing_max_us: Option<u64>,
 }
