@@ -1,0 +1,45 @@
+# Эксперимент A_chunk_0400: серия A_chunk, chunk_size_ms = 400
+# Сгенерировано experiments/make_configs.py — правьте генератор, а не этот файл
+[audio]
+input_device = "PipeWire Sound Server"
+output_device = "PipeWire Sound Server"
+sample_rate = 44100
+channels = 2
+sample_format = "F32"
+
+[buffer]
+ring_capacity_ms = 10000
+delay_ms = 5000
+
+[decision]
+words_dict_path = "../banned_words.json"
+max_distance = 1
+
+[framing]
+chunk_size_ms = 400
+
+[recognition]
+model_path = "../../models/vosk-model-ru-0.22"
+partial_results = true
+min_confidence = 0.0
+
+[masking]
+strategy = "Beep"
+beep_frequency_hz = 1000
+amplitude = 0.3
+attenuation_db = -30
+padding_ms = 50
+
+[control]
+enabled = true
+socket_path = ""
+
+[logging]
+# debug: в журнал пишутся все распознанные слова — по ним считаются TP и FP
+level = "debug"
+dir = "../results/A_chunk"
+
+[metrics]
+enabled = true
+export_interval_ms = 10000
+dir = "../results/A_chunk"
