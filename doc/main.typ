@@ -22,8 +22,8 @@
 
 #bibliography(
   "refs.bib",
-  style: "gost-r-705-2008-numeric",
-  full: true,
+  style: "gost-r-705-2008-numeric.csl",
+  // full: true,
   title: "Список литературы",
 )
 
